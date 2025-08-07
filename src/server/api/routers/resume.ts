@@ -181,7 +181,7 @@ export const resumeRouter = createTRPCRouter({
             // Upload file to Gemini File API
             console.log('Uploading PDF to Gemini File API...');
             const file = await ai.files.upload({
-              file: new Blob([pdfData.fileBuffer], { type: 'application/pdf' }),
+              file: new Blob([new Uint8Array(pdfData.fileBuffer)], { type: 'application/pdf' }),
               config: {
                 displayName: pdfData.fileName,
               },
