@@ -73,12 +73,6 @@ export function InterviewSettings({
     onSettingsChange({ ...settings, enableAudio: enabled });
   };
 
-  const getSuggestedJobRole = () => {
-    if (recentAnalysis?.jobRole) {
-      return recentAnalysis.jobRole;
-    }
-    return '';
-  };
 
   return (
     <div className="space-y-6">
@@ -198,7 +192,7 @@ export function InterviewSettings({
               <div>
                 <Label className="text-sm font-medium">Skills</Label>
                                  <div className="flex flex-wrap gap-1 mt-1">
-                   {(recentAnalysis.skills as Skills)?.technical?.slice(0, 5).map((skill: string) => (
+                   {(recentAnalysis.skills as unknown as Skills)?.technical?.slice(0, 5).map((skill: string) => (
                      <Badge key={skill} variant="outline" className="text-xs">
                        {skill}
                      </Badge>
@@ -208,7 +202,7 @@ export function InterviewSettings({
                              <div>
                  <Label className="text-sm font-medium">Experience</Label>
                  <p className="text-sm text-muted-foreground">
-                   {(recentAnalysis.experience as Experience)?.totalYears} years of experience
+                   {(recentAnalysis.experience as unknown as Experience)?.totalYears} years of experience
                  </p>
                </div>
             </div>

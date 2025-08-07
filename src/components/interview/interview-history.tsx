@@ -4,18 +4,15 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
-import { 
-  Calendar, 
-  Clock, 
-  Star, 
-  MessageSquare, 
-  TrendingUp,
+import {
+  Calendar,
+  Clock,
+  Star,
+  MessageSquare,
   FileText,
   Plus
 } from 'lucide-react';
-import type { InterviewDB, InterviewFeedbackDB, Skills } from '@/lib/types';
+import type { InterviewDB, Skills } from '@/lib/types';
 
 interface InterviewHistoryProps {
   interviews: InterviewDB[];
@@ -51,22 +48,12 @@ export function InterviewHistory({ interviews, onStartNew }: InterviewHistoryPro
 
   const formatDuration = (startedAt: Date, endedAt?: Date | null) => {
     if (!endedAt) return 'In Progress';
-    
+
     const duration = new Date(endedAt).getTime() - new Date(startedAt).getTime();
     const minutes = Math.floor(duration / (1000 * 60));
     const seconds = Math.floor((duration % (1000 * 60)) / 1000);
-    
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
 
-  const getAverageRating = (feedback?: InterviewFeedbackDB | null) => {
-    if (!feedback?.skillRatings) return null;
-    
-    const ratings = Object.values(feedback.skillRatings as Record<string, 'excellent' | 'good' | 'average' | 'needs_improvement'>);
-    const ratingValues = { excellent: 4, good: 3, average: 2, needs_improvement: 1 };
-    const average = ratings.reduce((sum, rating) => sum + ratingValues[rating as keyof typeof ratingValues], 0) / ratings.length;
-    
-    return average;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
   if (interviews.length === 0) {
@@ -75,7 +62,7 @@ export function InterviewHistory({ interviews, onStartNew }: InterviewHistoryPro
         <CardHeader>
           <CardTitle>Interview History</CardTitle>
           <CardDescription>
-            You haven't completed any interviews yet. Start your first interview to see your history here.
+            You haven&apos;t completed any interviews yet. Start your first interview to see your history here.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -110,11 +97,10 @@ export function InterviewHistory({ interviews, onStartNew }: InterviewHistoryPro
         <div className="space-y-4">
           <h3 className="text-lg font-semibold">Recent Interviews</h3>
           {interviews.map((interview) => (
-            <Card 
-              key={interview.id} 
-              className={`cursor-pointer transition-colors hover:bg-muted/50 ${
-                selectedInterview?.id === interview.id ? 'ring-2 ring-primary' : ''
-              }`}
+            <Card
+              key={interview.id}
+              className={`cursor-pointer transition-colors hover:bg-muted/50 ${selectedInterview?.id === interview.id ? 'ring-2 ring-primary' : ''
+                }`}
               onClick={() => setSelectedInterview(interview)}
             >
               <CardHeader className="pb-3">
@@ -182,13 +168,13 @@ export function InterviewHistory({ interviews, onStartNew }: InterviewHistoryPro
                     <div className="space-y-2">
                       <div>
                         <span className="text-sm text-muted-foreground">Skills:</span>
-                                                 <div className="flex flex-wrap gap-1 mt-1">
-                           {(selectedInterview.resumeAnalysis.skills as Skills)?.technical?.slice(0, 3).map((skill: string) => (
-                             <Badge key={skill} variant="outline" className="text-xs">
-                               {skill}
-                             </Badge>
-                           ))}
-                         </div>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {(selectedInterview.resumeAnalysis.skills as unknown as Skills)?.technical?.slice(0, 3).map((skill: string) => (
+                            <Badge key={skill} variant="outline" className="text-xs">
+                              {skill}
+                            </Badge>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -200,26 +186,28 @@ export function InterviewHistory({ interviews, onStartNew }: InterviewHistoryPro
                     <h4 className="font-medium mb-2">Feedback</h4>
                     <div className="space-y-3">
                       {/* Overall Rating */}
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">Overall Rating:</span>
-                        <Badge className={RATING_COLORS[selectedInterview.feedback.overallRating]}>
-                          {selectedInterview.feedback.overallRating}
-                        </Badge>
-                      </div>
+                      {selectedInterview?.feedback?.overallRating && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">Overall Rating:</span>
+                          <Badge className={RATING_COLORS[String(selectedInterview.feedback.overallRating) as keyof typeof RATING_COLORS]}>
+                            {String(selectedInterview.feedback.overallRating) as string}
+                          </Badge>
+                        </div>
+                      )}
 
                       {/* Skill Ratings */}
                       {selectedInterview.feedback.skillRatings && (
                         <div>
                           <span className="text-sm font-medium">Skill Ratings:</span>
                           <div className="grid grid-cols-1 gap-2 mt-2">
-                                                         {Object.entries(selectedInterview.feedback.skillRatings as Record<string, 'excellent' | 'good' | 'average' | 'needs_improvement'>).map(([skill, rating]) => (
-                               <div key={skill} className="flex items-center justify-between">
-                                 <span className="text-sm capitalize">{skill}:</span>
-                                 <Badge variant="outline" className="text-xs">
-                                   {rating}
-                                 </Badge>
-                               </div>
-                             ))}
+                            {Object.entries(selectedInterview.feedback.skillRatings as unknown as Record<string, 'excellent' | 'good' | 'average' | 'needs_improvement'>).map(([skill, rating]) => (
+                              <div key={skill} className="flex items-center justify-between">
+                                <span className="text-sm capitalize">{skill}:</span>
+                                <Badge variant="outline" className="text-xs">
+                                  {String(rating)}
+                                </Badge>
+                              </div>
+                            ))}
                           </div>
                         </div>
                       )}
@@ -312,7 +300,7 @@ export function InterviewHistory({ interviews, onStartNew }: InterviewHistoryPro
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold">
-                  {interviews.filter(i => i.status === 'completed').length > 0 
+                  {interviews.filter(i => i.status === 'completed').length > 0
                     ? Math.round(interviews.filter(i => i.status === 'completed').length / interviews.length * 100)
                     : 0}%
                 </div>

@@ -159,7 +159,7 @@ export default function InterviewPage() {
                         </CardHeader>
                         <CardContent>
                             <div className="text-2xl font-bold">
-                                {stats.averageRating > 0 ? stats.averageRating.toFixed(1) : 'N/A'}
+                                {stats.averageRating > 0 ? stats.averageRating.toFixed(1) : '0.0'}
                             </div>
                         </CardContent>
                     </Card>
@@ -180,13 +180,13 @@ export default function InterviewPage() {
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
-                                                         <InterviewSettings
-                                 settings={settings}
-                                 onSettingsChange={setSettings}
-                                 onStartInterview={handleStartInterview}
-                                 isLoading={createSession.isPending}
-                                 recentAnalysis={recentAnalysis as ResumeAnalysisDB}
-                             />
+                            <InterviewSettings
+                                settings={settings}
+                                onSettingsChange={setSettings}
+                                onStartInterview={handleStartInterview}
+                                isLoading={createSession.isPending}
+                                recentAnalysis={recentAnalysis as ResumeAnalysisDB}
+                            />
                         </CardContent>
                     </Card>
 
@@ -210,10 +210,10 @@ export default function InterviewPage() {
                                     <div>
                                         <Badge variant="secondary">{recentAnalysis.jobRole}</Badge>
                                     </div>
-                                                                         <div className="text-sm text-muted-foreground">
-                                         <p>Skills: {(recentAnalysis.skills as Skills)?.technical?.slice(0, 3).join(', ') || 'N/A'}...</p>
-                                         <p>Experience: {(recentAnalysis.experience as Experience)?.totalYears || 'N/A'} years</p>
-                                     </div>
+                                    <div className="text-sm text-muted-foreground">
+                                        <p>Skills: {(recentAnalysis.skills as Skills)?.technical?.slice(0, 3).join(', ') || 'N/A'}...</p>
+                                        <p>Experience: {(recentAnalysis.experience as Experience)?.totalYears || 'N/A'} years</p>
+                                    </div>
                                 </div>
                             ) : (
                                 <p className="text-sm text-muted-foreground">
@@ -235,12 +235,12 @@ export default function InterviewPage() {
                 />
             )}
 
-                         {currentView === 'history' && (
-                 <InterviewHistory
-                     interviews={(recentInterviews as InterviewDB[]) || []}
-                     onStartNew={() => setCurrentView('setup')}
-                 />
-             )}
+            {currentView === 'history' && (
+                <InterviewHistory
+                    interviews={(recentInterviews as InterviewDB[]) || []}
+                    onStartNew={() => setCurrentView('setup')}
+                />
+            )}
         </div>
     );
 }

@@ -124,7 +124,7 @@ export function ResumeUpload({ onAnalysisComplete }: ResumeUploadProps) {
                 jobRole: jobRole.trim(),
                 userId: user.id,
             });
-        } catch (error) {
+        } catch {
             toast.error("Error", {
                 description: "Failed to process file",
             });

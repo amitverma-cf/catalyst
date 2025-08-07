@@ -1,24 +1,16 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { 
   Mic, 
   MicOff, 
-  Video, 
   VideoOff, 
-  Phone, 
   PhoneOff, 
   Settings, 
-  MessageSquare,
-  Clock,
-  CheckCircle,
   AlertCircle,
   Loader2
 } from 'lucide-react';
@@ -34,7 +26,6 @@ interface InterviewRoomProps {
 
 export function InterviewRoom({
   token,
-  interviewId,
   settings,
   onComplete,
   onBack,
@@ -50,7 +41,7 @@ export function InterviewRoom({
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sessionDuration, setSessionDuration] = useState(0);
+  const [sessionDuration, setSessionDuration] = useState<number>(0);
   const [showSettings, setShowSettings] = useState(false);
 
   // Refs for media handling
@@ -160,7 +151,7 @@ export function InterviewRoom({
   const convertFloat32ToInt16 = (float32Array: Float32Array): Int16Array => {
     const int16Array = new Int16Array(float32Array.length);
     for (let i = 0; i < float32Array.length; i++) {
-      const s = Math.max(-1, Math.min(1, float32Array[i]));
+      const s = Math.max(-1, Math.min(1, float32Array[i] ?? 0));
       int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
     }
     return int16Array;
@@ -173,6 +164,7 @@ export function InterviewRoom({
 
       const ai = new GoogleGenAI({
         apiKey: token, // Use ephemeral token
+        httpOptions: { apiVersion: 'v1alpha' }
       });
 
       const model = 'gemini-2.5-flash-preview-native-audio-dialog';
@@ -194,8 +186,8 @@ export function InterviewRoom({
         realtimeInputConfig: {
           automaticActivityDetection: {
             disabled: false,
-            startOfSpeechSensitivity: 'START_SENSITIVITY_LOW',
-            endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
+            startOfSpeechSensitivity: 'START_SENSITIVITY_LOW' as any,
+            endOfSpeechSensitivity: 'END_SENSITIVITY_LOW' as any,
             prefixPaddingMs: 20,
             silenceDurationMs: 100,
           }
@@ -211,7 +203,7 @@ export function InterviewRoom({
             console.log('Gemini session opened');
             setState(prev => ({ ...prev, isConnected: true }));
           },
-          onmessage: (message: LiveServerMessage) => {
+          onmessage: (message: any) => {
             responseQueue.push(message);
             handleGeminiMessage(message);
           },
@@ -248,7 +240,7 @@ export function InterviewRoom({
     }
   };
 
-  const handleGeminiMessage = (message: LiveServerMessage) => {
+  const handleGeminiMessage = (message: any) => {
     setState(prev => ({
       ...prev,
       messages: [...prev.messages, message],
@@ -258,7 +250,7 @@ export function InterviewRoom({
     // Handle audio output
     if (message.data && audioRef.current) {
       const audioBuffer = new Int16Array(
-        new Uint8Array(message.data.split('').map(c => c.charCodeAt(0))).buffer
+        new Uint8Array(message.data.split('').map((c: string) => c.charCodeAt(0))).buffer
       );
       
       const audioBlob = new Blob([audioBuffer], { type: 'audio/wav' });
@@ -356,7 +348,7 @@ export function InterviewRoom({
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
   if (isLoading) {

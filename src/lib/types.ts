@@ -19,7 +19,7 @@ export interface ResumeAnalysis {
   jobRole: string;
   skills: Skills | null;
   experience: Experience | null;
-  geminiAnalysis: unknown;
+  geminiAnalysis: string;
   createdAt: Date;
 }
 
@@ -154,7 +154,7 @@ export function extractPDFData(resumeText: string): PDFFileData | null {
           fileName: jsonData.fileName
         };
       } catch (error) {
-        console.log(`Failed to convert base64 to buffer: ${error}`);
+        console.log(`Failed to convert base64 to buffer: ${error as unknown as string}`);
         return null;
       }
     }
@@ -200,7 +200,7 @@ export function extractPDFData(resumeText: string): PDFFileData | null {
       fileName
     };
   } catch (error) {
-    console.log(`Failed to convert base64 to buffer: ${error}`);
+    console.log(`Failed to convert base64 to buffer: ${error as unknown as string}`);
     return null;
   }
 } 
@@ -226,7 +226,7 @@ export interface InterviewFeedback {
   improvements?: string | null;
   summary?: string | null;
   skillRatings?: Record<string, 'excellent' | 'good' | 'average' | 'needs_improvement'> | null;
-  geminiInsights?: unknown;
+  geminiInsights?: string;
   createdAt: Date;
 }
 
@@ -338,9 +338,9 @@ export interface ResumeAnalysisDB {
   userId: string;
   resumeText: string;
   jobRole: string;
-  skills: unknown;
-  experience: unknown;
-  geminiAnalysis: unknown;
+  skills: string;
+  experience: string;
+  geminiAnalysis: string;
   createdAt: Date;
 }
 
@@ -351,8 +351,8 @@ export interface InterviewFeedbackDB {
   strengths: string | null;
   improvements: string | null;
   summary: string | null;
-  skillRatings: unknown;
-  geminiInsights: unknown;
+  skillRatings: string;
+  geminiInsights: string;
   createdAt: Date;
 }
 

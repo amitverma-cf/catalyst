@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { api, HydrateClient } from "@/trpc/server";
+import { HydrateClient } from "@/trpc/server";
 import { UserSyncDemo } from "@/components/user-sync-demo";
 
 export default async function Home() {

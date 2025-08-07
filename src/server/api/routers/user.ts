@@ -5,7 +5,6 @@ import { currentUser } from "@clerk/nextjs/server";
 import {
   createTRPCRouter,
   protectedProcedure,
-  publicProcedure,
 } from "@/server/api/trpc";
 import { users } from "@/server/db/schema";
 

@@ -1,7 +1,6 @@
 "use client";
 
 import { useAuth } from "@clerk/nextjs";
-import { api } from "@/trpc/react";
 import { useUserSync } from "@/hooks/use-user-sync";
 
 export function UserProfile() {

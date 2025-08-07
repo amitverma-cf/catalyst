@@ -3,7 +3,6 @@ import { GoogleGenAI, MediaResolution, Modality, StartSensitivity, EndSensitivit
 import { eq, and, desc } from 'drizzle-orm';
 import { createTRPCRouter, protectedProcedure } from '../trpc';
 import { interviews, interviewFeedback, resumeAnalysis } from '../../db/schema';
-import type { Interview, InterviewFeedback, EphemeralToken, InterviewSession, InterviewSettings } from '../../../lib/types';
 
 export const interviewRouter = createTRPCRouter({
   // Create ephemeral token for secure client-side authentication
@@ -20,9 +19,7 @@ export const interviewRouter = createTRPCRouter({
     }))
     .mutation(async ({ ctx, input }) => {
       try {
-        const ai = new GoogleGenAI({
-          apiKey: process.env.GEMINI_API_KEY,
-        });
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY, httpOptions: { apiVersion: 'v1alpha' } });
 
         const expireTime = new Date(Date.now() + 30 * 60 * 1000).toISOString();
         const newSessionExpireTime = new Date(Date.now() + 1 * 60 * 1000).toISOString();
@@ -30,7 +27,7 @@ export const interviewRouter = createTRPCRouter({
         // Create ephemeral token with interview-specific constraints
         const token = await ai.authTokens.create({
           config: {
-            uses: 1,
+            uses: 0,
             expireTime,
             newSessionExpireTime,
             liveConnectConstraints: {
@@ -226,11 +223,11 @@ export const interviewRouter = createTRPCRouter({
       return {
         totalInterviews: totalInterviews.length,
         completedInterviews: completedInterviews.length,
-        averageRating: averageRating.length > 0 
+        averageRating: averageRating.length > 0
           ? averageRating.reduce((acc, curr) => {
-              const ratingValues = { excellent: 4, good: 3, average: 2, needs_improvement: 1 };
-              return acc + ratingValues[curr.rating as keyof typeof ratingValues];
-            }, 0) / averageRating.length
+            const ratingValues = { excellent: 4, good: 3, average: 2, needs_improvement: 1 };
+            return acc + ratingValues[curr.rating as keyof typeof ratingValues];
+          }, 0) / averageRating.length
           : 0,
       };
     }),

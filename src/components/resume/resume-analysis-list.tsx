@@ -9,8 +9,7 @@ import {
   Calendar, 
   Briefcase, 
   Eye, 
-  Trash2, 
-  Download,
+  Trash2,
   Star
 } from "lucide-react";
 import { api } from "@/trpc/react";
