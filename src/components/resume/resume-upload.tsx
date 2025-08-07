@@ -110,7 +110,13 @@ export function ResumeUpload({ onAnalysisComplete }: ResumeUploadProps) {
             if (uploadMethod === "file" && selectedFile) {
                 // Convert PDF to base64 for Gemini processing
                 const base64Data = await convertFileToBase64(selectedFile);
-                finalResumeText = `PDF_FILE:${base64Data}:${selectedFile.name}`;
+                // Use JSON format for more reliable parsing
+                const fileData = {
+                    type: 'PDF_FILE',
+                    data: base64Data,
+                    fileName: selectedFile.name
+                };
+                finalResumeText = JSON.stringify(fileData);
             }
 
             analyzeResumeMutation.mutate({

@@ -1,55 +1,147 @@
 import { z } from "zod";
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type, FunctionCallingConfigMode } from '@google/genai';
 import { TRPCError } from "@trpc/server";
 import { eq, and } from "drizzle-orm";
 
 import { createTRPCRouter, publicProcedure } from "@/server/api/trpc";
 import { db } from "@/server/db";
 import { resumeAnalysis } from "@/server/db/schema";
+import { validatePDFFile, extractPDFData } from "@/lib/types";
 
 // Configure the Gemini AI client
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
+// Function declaration for resume analysis
+const analyzeResumeFunctionDeclaration = {
+  name: 'analyze_resume',
+  description: 'Analyzes a resume and provides comprehensive insights including skills, experience, education, strengths, areas for improvement, and recommendations.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      extractedText: {
+        type: Type.STRING,
+        description: 'Full text content extracted from the resume'
+      },
+      skills: {
+        type: Type.OBJECT,
+        properties: {
+          technical: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: 'Technical skills identified in the resume'
+          },
+          soft: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: 'Soft skills identified in the resume'
+          },
+          programming: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: 'Programming languages and technologies identified'
+          },
+          tools: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: 'Tools, platforms, and technologies used'
+          }
+        },
+        required: ['technical', 'soft', 'programming', 'tools']
+      },
+      experience: {
+        type: Type.OBJECT,
+        properties: {
+          totalYears: {
+            type: Type.NUMBER,
+            description: 'Total years of work experience calculated from positions'
+          },
+          positions: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                company: { type: Type.STRING, description: 'Company name' },
+                role: { type: Type.STRING, description: 'Job title/role' },
+                duration: { type: Type.STRING, description: 'Employment period (e.g., "01/2024 - 07/2024")' },
+                responsibilities: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: 'Key responsibilities and achievements'
+                }
+              },
+              required: ['company', 'role', 'duration', 'responsibilities']
+            },
+            description: 'Work experience positions'
+          },
+          industries: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: 'Industries the candidate has worked in'
+          }
+        },
+        required: ['totalYears', 'positions', 'industries']
+      },
+      education: {
+        type: Type.OBJECT,
+        properties: {
+          degrees: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                degree: { type: Type.STRING, description: 'Degree name' },
+                institution: { type: Type.STRING, description: 'School/university name' },
+                year: { type: Type.STRING, description: 'Graduation year or expected year' }
+              },
+              required: ['degree', 'institution', 'year']
+            },
+            description: 'Educational degrees and qualifications'
+          },
+          certifications: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: 'Professional certifications and licenses'
+          }
+        },
+        required: ['degrees', 'certifications']
+      },
+      strengths: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description: 'Key strengths and positive aspects of the resume'
+      },
+      improvementAreas: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description: 'Areas where the resume could be improved'
+      },
+      overallScore: {
+        type: Type.NUMBER,
+        description: 'Overall resume quality score from 1-100'
+      },
+      recommendations: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description: 'Specific recommendations for improving the resume'
+      }
+    },
+    required: ['extractedText', 'skills', 'experience', 'education', 'strengths', 'improvementAreas', 'overallScore', 'recommendations']
+  }
+};
+
 const resumeAnalysisPrompt = `
-Analyze this resume thoroughly and provide a comprehensive analysis. Return your response as a JSON object with the following structure:
+Analyze this resume thoroughly and provide a comprehensive analysis for the target job role. 
 
-{
-  "extractedText": "Full text content of the resume",
-  "skills": {
-    "technical": ["skill1", "skill2"],
-    "soft": ["skill1", "skill2"],
-    "programming": ["language1", "language2"],
-    "tools": ["tool1", "tool2"]
-  },
-  "experience": {
-    "totalYears": number,
-    "positions": [
-      {
-        "company": "Company Name",
-        "role": "Job Title",
-        "duration": "Start - End",
-        "responsibilities": ["resp1", "resp2"]
-      }
-    ],
-    "industries": ["industry1", "industry2"]
-  },
-  "education": {
-    "degrees": [
-      {
-        "degree": "Degree Name",
-        "institution": "School Name",
-        "year": "Graduation Year"
-      }
-    ],
-    "certifications": ["cert1", "cert2"]
-  },
-  "strengths": ["strength1", "strength2"],
-  "improvementAreas": ["area1", "area2"],
-  "overallScore": number (1-100),
-  "recommendations": ["rec1", "rec2"]
-}
+Focus on:
+- Extracting all relevant text content
+- Identifying technical and soft skills
+- Analyzing work experience and calculating total years
+- Reviewing education and certifications
+- Identifying strengths and areas for improvement
+- Providing specific, actionable recommendations
+- Scoring the resume quality from 1-100
 
-Be thorough and accurate in your analysis.
+Be thorough and accurate in your analysis. Consider the target job role when evaluating relevance and providing recommendations.
 `;
 
 export const resumeRouter = createTRPCRouter({
@@ -67,43 +159,104 @@ export const resumeRouter = createTRPCRouter({
         Target Job Role: ${input.jobRole}`;
 
         // Check if this is a PDF file upload
-        if (input.resumeText.startsWith('PDF_FILE:')) {
-          const parts = input.resumeText.split(':');
-          const base64Data = parts[1];
-          const fileName = parts[2];
+        const pdfData = extractPDFData(input.resumeText);
+        
+                if (pdfData) {
+          console.log(`Processing PDF file: ${pdfData.fileName}`);
           
-          if (!base64Data || !fileName) {
-            throw new Error("Invalid PDF file format");
+          // Validate the PDF data
+          const validation = validatePDFFile(pdfData.fileBuffer);
+          
+          if (!validation.isValid) {
+            console.error(`PDF validation failed for ${pdfData.fileName}: ${validation.error}`);
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `PDF validation failed: ${validation.error}. Please ensure you are uploading a valid PDF file.`
+            });
           }
-          
-          prompt += `\nPlease analyze this PDF resume file for the target role and provide detailed insights.`;
 
-          const contents = [
-            { text: prompt },
-            {
-              inlineData: {
-                mimeType: 'application/pdf',
-                data: base64Data.split(',')[1] || base64Data // Remove data:application/pdf;base64, if present
+          console.log(`PDF validation passed. File size: ${validation.fileSize} bytes`);
+          
+          try {
+            // Upload file to Gemini File API
+            console.log('Uploading PDF to Gemini File API...');
+            const file = await ai.files.upload({
+              file: new Blob([pdfData.fileBuffer], { type: 'application/pdf' }),
+              config: {
+                displayName: pdfData.fileName,
+              },
+            });
+
+            // Wait for the file to be processed
+            if (!file.name) {
+              throw new Error('File upload failed - no file name returned');
+            }
+            
+            let getFile = await ai.files.get({ name: file.name });
+            while (getFile.state === 'PROCESSING') {
+              getFile = await ai.files.get({ name: file.name });
+              console.log(`File processing status: ${getFile.state}`);
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+
+            if (getFile.state === 'FAILED') {
+              throw new Error('File processing failed');
+            }
+
+            console.log('File uploaded successfully, analyzing with Gemini...');
+            
+            if (!file.uri) {
+              throw new Error('File upload failed - no URI returned');
+            }
+            
+            // Analyze the file with Gemini using function calling
+            const response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: [
+                { text: prompt },
+                { fileData: { fileUri: file.uri, mimeType: 'application/pdf' } }
+              ],
+              config: {
+                tools: [{
+                  functionDeclarations: [analyzeResumeFunctionDeclaration]
+                }],
+                toolConfig: {
+                  functionCallingConfig: {
+                    mode: FunctionCallingConfigMode.ANY
+                  }
+                }
+              }
+            });
+
+            console.log('Gemini analysis completed successfully');
+            
+            let geminiAnalysis;
+            if (response.functionCalls && response.functionCalls.length > 0) {
+              const functionCall = response.functionCalls[0];
+              if (functionCall) {
+                console.log('Function call received:', functionCall.name);
+                geminiAnalysis = functionCall.args;
+              } else {
+                console.log('No valid function call received, using text response');
+                const analysisText = response.text || "";
+                try {
+                  geminiAnalysis = JSON.parse(analysisText);
+                } catch {
+                  geminiAnalysis = { rawAnalysis: analysisText };
+                }
+              }
+            } else {
+              console.log('No function call received, using text response');
+              const analysisText = response.text || "";
+              try {
+                geminiAnalysis = JSON.parse(analysisText);
+              } catch {
+                geminiAnalysis = { rawAnalysis: analysisText };
               }
             }
-          ];
-
-          const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: contents
-          });
-
-          const analysisText = response.text || "";
-          
-          let geminiAnalysis;
-          try {
-            geminiAnalysis = JSON.parse(analysisText);
-          } catch {
-            geminiAnalysis = { rawAnalysis: analysisText };
-          }
 
           // Use extracted text from analysis or fallback to filename
-          const finalResumeText = geminiAnalysis.extractedText || `PDF Resume: ${fileName}`;
+          const finalResumeText = geminiAnalysis.extractedText || `PDF Resume: ${pdfData.fileName}`;
 
           // Save to database
           const savedAnalysisArray = await db.insert(resumeAnalysis).values({
@@ -125,6 +278,39 @@ export const resumeRouter = createTRPCRouter({
             analysisId: savedAnalysis.id,
             analysis: geminiAnalysis
           };
+        } catch (error) {
+          console.error('PDF processing error:', error);
+          
+          // Handle specific Gemini API errors
+          if (error instanceof Error) {
+            if (error.message.includes('document has no pages')) {
+              throw new TRPCError({
+                code: 'BAD_REQUEST',
+                message: 'The uploaded PDF appears to be empty or corrupted. Please upload a valid PDF file with readable content.'
+              });
+            }
+            
+            if (error.message.includes('INVALID_ARGUMENT')) {
+              throw new TRPCError({
+                code: 'BAD_REQUEST',
+                message: 'The PDF file format is not supported or the file is corrupted. Please try uploading a different PDF file.'
+              });
+            }
+            
+            if (error.message.includes('PERMISSION_DENIED')) {
+              throw new TRPCError({
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'API access denied. Please check your API configuration.'
+              });
+            }
+          }
+          
+          // For PDF processing errors, provide a helpful message
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Failed to process PDF file. Please try again or upload a different file. If the problem persists, try copying the text content from your PDF and paste it directly.'
+          });
+        }
         } else {
           // Handle text input
           prompt += `\nResume Content: ${input.resumeText}
@@ -133,16 +319,42 @@ export const resumeRouter = createTRPCRouter({
 
           const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: prompt
+            contents: prompt,
+            config: {
+              tools: [{
+                functionDeclarations: [analyzeResumeFunctionDeclaration]
+              }],
+              toolConfig: {
+                functionCallingConfig: {
+                  mode: FunctionCallingConfigMode.ANY
+                }
+              }
+            }
           });
 
-          const analysisText = response.text || "";
-          
           let geminiAnalysis;
-          try {
-            geminiAnalysis = JSON.parse(analysisText);
-          } catch {
-            geminiAnalysis = { rawAnalysis: analysisText };
+          if (response.functionCalls && response.functionCalls.length > 0) {
+            const functionCall = response.functionCalls[0];
+            if (functionCall) {
+              console.log('Function call received:', functionCall.name);
+              geminiAnalysis = functionCall.args;
+            } else {
+              console.log('No valid function call received, using text response');
+              const analysisText = response.text || "";
+              try {
+                geminiAnalysis = JSON.parse(analysisText);
+              } catch {
+                geminiAnalysis = { rawAnalysis: analysisText };
+              }
+            }
+          } else {
+            console.log('No function call received, using text response');
+            const analysisText = response.text || "";
+            try {
+              geminiAnalysis = JSON.parse(analysisText);
+            } catch {
+              geminiAnalysis = { rawAnalysis: analysisText };
+            }
           }
 
           // Save to database

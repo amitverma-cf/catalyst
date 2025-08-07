@@ -31,6 +31,11 @@ interface ResumeAnalysisDisplayProps {
 export function ResumeAnalysisDisplay({ analysis }: ResumeAnalysisDisplayProps) {
   const gemini = analysis.geminiAnalysis;
 
+  // Debug logging
+  console.log('Analysis data:', analysis);
+  console.log('Gemini analysis:', gemini);
+  console.log('Overall score:', gemini?.overallScore);
+
   // Safely extract data with fallbacks
   const skills = gemini?.skills || [];
   const experience = gemini?.experience || {};
@@ -52,11 +57,15 @@ export function ResumeAnalysisDisplay({ analysis }: ResumeAnalysisDisplayProps) 
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <div className="flex items-center gap-1">
               <Clock className="h-4 w-4" />
-              {new Date(analysis.createdAt).toLocaleDateString()}
+              {new Date(analysis.createdAt).toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              })}
             </div>
             <div className="flex items-center gap-1">
               <Star className="h-4 w-4" />
-              Overall Score: {overallScore}/100
+              Overall Score: {typeof overallScore === 'number' ? overallScore : 0}/100
             </div>
           </div>
         </CardHeader>
