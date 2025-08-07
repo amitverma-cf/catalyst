@@ -19,9 +19,8 @@ export interface ResumeAnalysis {
   jobRole: string;
   skills: Skills | null;
   experience: Experience | null;
-  geminiAnalysis: any;
+  geminiAnalysis: unknown;
   createdAt: Date;
-  updatedAt: Date;
 }
 
 export interface Skills {
@@ -204,4 +203,169 @@ export function extractPDFData(resumeText: string): PDFFileData | null {
     console.log(`Failed to convert base64 to buffer: ${error}`);
     return null;
   }
+} 
+
+// Interview Types
+export interface Interview {
+  id: number;
+  userId: string;
+  resumeAnalysisId?: number | null;
+  jobRole: string;
+  status: 'in_progress' | 'completed';
+  startedAt: Date;
+  endedAt?: Date | null;
+  geminiSessionId?: string | null;
+  createdAt: Date;
+}
+
+export interface InterviewFeedback {
+  id: number;
+  interviewId: number;
+  overallRating: 'excellent' | 'good' | 'average' | 'needs_improvement';
+  strengths?: string | null;
+  improvements?: string | null;
+  summary?: string | null;
+  skillRatings?: Record<string, 'excellent' | 'good' | 'average' | 'needs_improvement'> | null;
+  geminiInsights?: unknown;
+  createdAt: Date;
+}
+
+export interface EphemeralToken {
+  name: string;
+  expireTime: string;
+  newSessionExpireTime: string;
+}
+
+export interface InterviewSession {
+  id: string;
+  token: string;
+  model: string;
+  config: InterviewConfig;
+}
+
+export interface InterviewConfig {
+  responseModalities: string[];
+  mediaResolution?: string;
+  speechConfig?: {
+    voiceConfig?: {
+      prebuiltVoiceConfig?: {
+        voiceName: string;
+      };
+    };
+    languageCode?: string;
+  };
+  contextWindowCompression?: {
+    triggerTokens: string;
+    slidingWindow: { targetTokens: string };
+  };
+  sessionResumption?: { handle?: string };
+  realtimeInputConfig?: {
+    automaticActivityDetection?: {
+      disabled?: boolean;
+      startOfSpeechSensitivity?: string;
+      endOfSpeechSensitivity?: string;
+      prefixPaddingMs?: number;
+      silenceDurationMs?: number;
+    };
+  };
+}
+
+export interface LiveServerMessage {
+  serverContent?: {
+    turnComplete?: boolean;
+    modelTurn?: {
+      parts?: Array<{
+        text?: string;
+        inlineData?: {
+          data: string;
+          mimeType: string;
+        };
+        fileData?: {
+          fileUri: string;
+        };
+      }>;
+    };
+    interrupted?: boolean;
+    generationComplete?: boolean;
+    outputTranscription?: {
+      text: string;
+    };
+    inputTranscription?: {
+      text: string;
+    };
+  };
+  toolCall?: {
+    functionCalls: Array<{
+      id: string;
+      name: string;
+    }>;
+  };
+  sessionResumptionUpdate?: {
+    resumable: boolean;
+    newHandle: string;
+  };
+  goAway?: {
+    timeLeft: string;
+  };
+  usageMetadata?: {
+    totalTokenCount: string;
+    responseTokensDetails: any[];
+  };
+  data?: string;
+  text?: string;
+}
+
+export interface InterviewState {
+  isConnected: boolean;
+  isRecording: boolean;
+  isSpeaking: boolean;
+  sessionId?: string;
+  messages: LiveServerMessage[];
+  currentTurn: LiveServerMessage[];
+}
+
+export interface InterviewSettings {
+  jobRole: string;
+  voiceName: string;
+  languageCode: string;
+  enableVideo: boolean;
+  enableAudio: boolean;
+}
+
+// Database result types (matching actual schema)
+export interface ResumeAnalysisDB {
+  id: number;
+  userId: string;
+  resumeText: string;
+  jobRole: string;
+  skills: unknown;
+  experience: unknown;
+  geminiAnalysis: unknown;
+  createdAt: Date;
+}
+
+export interface InterviewFeedbackDB {
+  id: number;
+  interviewId: number;
+  overallRating: 'excellent' | 'good' | 'average' | 'needs_improvement';
+  strengths: string | null;
+  improvements: string | null;
+  summary: string | null;
+  skillRatings: unknown;
+  geminiInsights: unknown;
+  createdAt: Date;
+}
+
+export interface InterviewDB {
+  id: number;
+  userId: string;
+  resumeAnalysisId: number | null;
+  jobRole: string;
+  status: 'in_progress' | 'completed';
+  startedAt: Date;
+  endedAt: Date | null;
+  geminiSessionId: string | null;
+  createdAt: Date;
+  resumeAnalysis?: ResumeAnalysisDB | null;
+  feedback?: InterviewFeedbackDB | null;
 } 
