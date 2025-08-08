@@ -38,7 +38,7 @@ export default async function Home() {
               </Link>
             ) : (
               <div className="flex max-w-xs flex-col gap-4 rounded-xl bg-white/10 p-4 hover:bg-white/20 transition">
-                <h3 className="text-2xl font-bold text-center">Sign in to analysis resume →</h3>
+                <h3 className="text-2xl font-bold text-center">Sign in to analyse resume →</h3>
                 <div className="text-lg text-center">
                   Please sign in to start analyzing your resume with AI-powered insights.
                 </div>
