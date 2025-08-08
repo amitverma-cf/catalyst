@@ -30,7 +30,7 @@ export default function RootLayout({
         <html lang="en" className={`${geist.variable}`}>
           <body>
             <UserSyncProvider>
-              <header className="flex justify-end items-center p-4 gap-4 h-16">
+              <header className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-white/10">
                 <Link href="/" className="text-xl sm:text-2xl font-extrabold tracking-tight">
                   <span className="text-[#6c47ff]">Catalysts</span>
                 </Link>
