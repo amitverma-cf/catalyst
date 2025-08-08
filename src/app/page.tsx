@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { HydrateClient } from "@/trpc/server";
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@clerk/nextjs/server";
 import { SignInButton } from "@clerk/nextjs";
 
 export default async function Home() {

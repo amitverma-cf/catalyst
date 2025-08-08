@@ -65,10 +65,6 @@ export function InterviewSettings({
     onSettingsChange({ ...settings, languageCode: value });
   };
 
-  const handleVideoToggle = (enabled: boolean) => {
-    onSettingsChange({ ...settings, enableVideo: enabled });
-  };
-
   const handleAudioToggle = (enabled: boolean) => {
     onSettingsChange({ ...settings, enableAudio: enabled });
   };

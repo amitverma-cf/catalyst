@@ -7,8 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { 
   Mic, 
-  MicOff, 
-  VideoOff, 
+  MicOff,
   PhoneOff, 
   Settings, 
   AlertCircle,
@@ -485,7 +484,7 @@ export function InterviewRoom({
         audioSourcesRef.current.forEach(source => {
           try {
             source.stop();
-          } catch (e) {
+          } catch {
             // Source might already be stopped
           }
         });
@@ -572,7 +571,7 @@ export function InterviewRoom({
         audioSourcesRef.current.forEach((source: AudioBufferSourceNode) => {
           try {
             source.stop();
-          } catch (e) {
+          } catch {
             // Source might already be stopped
           }
         });
@@ -722,7 +721,7 @@ export function InterviewRoom({
               <CardHeader>
                 <CardTitle>Voice Interview</CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Click "Start Recording" to begin speaking with the AI interviewer
+                  Click `&quot;Start Recording&quot;` to begin speaking with the AI interviewer
                 </p>
               </CardHeader>
               <CardContent>
