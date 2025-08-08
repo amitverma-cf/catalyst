@@ -181,7 +181,7 @@ export function InterviewRoom({
       const { GoogleGenAI, Modality } = await import('@google/genai');
 
       const client = new GoogleGenAI({
-        apiKey: "AIzaSyA5b2lVRs20xs7IFaaVLPFGm9zWlsoYLww", // Use your API key
+        apiKey: token, // Use your API key
         httpOptions: { apiVersion: 'v1alpha' }
       });
 
