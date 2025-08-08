@@ -16,6 +16,74 @@ import {
 } from 'lucide-react';
 import type { InterviewSettings, LiveServerMessage, InterviewState } from '@/lib/types';
 
+// Audio utility functions from the reference implementation
+function encode(bytes: Uint8Array): string {
+  let binary = '';
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i] ?? 0);
+  }
+  return btoa(binary);
+}
+
+function decode(base64: string): Uint8Array {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function createBlob(data: Float32Array) {
+  const l = data.length;
+  const int16 = new Int16Array(l);
+  for (let i = 0; i < l; i++) {
+    // convert float32 -1 to 1 to int16 -32768 to 32767
+    int16[i] = (data[i] ?? 0) * 32768;
+  }
+
+  return {
+    data: encode(new Uint8Array(int16.buffer)),
+    mimeType: 'audio/pcm;rate=16000',
+  };
+}
+
+async function decodeAudioData(
+  data: Uint8Array,
+  ctx: AudioContext,
+  sampleRate: number,
+  numChannels: number,
+): Promise<AudioBuffer> {
+  const buffer = ctx.createBuffer(
+    numChannels,
+    data.length / 2 / numChannels,
+    sampleRate,
+  );
+
+  const dataInt16 = new Int16Array(data.buffer);
+  const l = dataInt16.length;
+  const dataFloat32 = new Float32Array(l);
+  for (let i = 0; i < l; i++) {
+    dataFloat32[i] = (dataInt16[i] ?? 0) / 32768.0;
+  }
+  
+  // Extract interleaved channels
+  if (numChannels === 1) {
+    buffer.copyToChannel(dataFloat32, 0);
+  } else {
+    for (let i = 0; i < numChannels; i++) {
+      const channel = dataFloat32.filter(
+        (_, index) => index % numChannels === i,
+      );
+      buffer.copyToChannel(channel, i);
+    }
+  }
+
+  return buffer;
+}
+
 interface InterviewRoomProps {
   token: string;
   interviewId: number;
@@ -44,13 +112,15 @@ export function InterviewRoom({
   const [sessionDuration, setSessionDuration] = useState<number>(0);
   const [showSettings, setShowSettings] = useState(false);
 
-  // Refs for media handling
-  const videoRef = useRef<HTMLVideoElement>(null);
+  // Refs for media handling (audio only)
   const audioRef = useRef<HTMLAudioElement>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const sessionRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const outputGainRef = useRef<GainNode | null>(null);
+  const audioSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const nextStartTimeRef = useRef<number>(0);
 
   // Timer for session duration
   useEffect(() => {
@@ -64,8 +134,23 @@ export function InterviewRoom({
 
   // Initialize interview session
   useEffect(() => {
+    // Suppress specific console warnings during initialization
+    const originalWarn = console.warn;
+    console.warn = (...args) => {
+      const message = args.join(' ');
+      if (
+        !message.includes('non-text parts inlineData') &&
+        !message.includes('AbortError') &&
+        !message.includes('NotSupportedError')
+      ) {
+        originalWarn(...args);
+      }
+    };
+
     initializeSession();
+    
     return () => {
+      console.warn = originalWarn;
       cleanupSession();
     };
   }, []);
@@ -75,28 +160,41 @@ export function InterviewRoom({
       setIsLoading(true);
       setError(null);
 
-      // Request media permissions
-      if (settings.enableVideo || settings.enableAudio) {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: settings.enableVideo ? { width: 640, height: 480 } : false,
-          audio: settings.enableAudio ? {
-            sampleRate: 16000,
-            channelCount: 1,
-            echoCancellation: true,
-            noiseSuppression: true,
-          } : false,
-        });
+      // Only request audio permissions (no video)
+      if (settings.enableAudio) {
+        try {
+          const constraints = {
+            audio: {
+              sampleRate: 16000,
+              channelCount: 1,
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+          };
 
-        mediaStreamRef.current = stream;
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          mediaStreamRef.current = stream;
 
-        // Set up video
-        if (settings.enableVideo && videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-
-        // Set up audio processing
-        if (settings.enableAudio) {
+          // Set up audio processing
           await setupAudioProcessing(stream);
+        } catch (mediaError) {
+          console.warn('Media access error:', mediaError);
+          
+          // Provide user-friendly error messages
+          if (mediaError instanceof Error) {
+            if (mediaError.name === 'NotAllowedError') {
+              throw new Error('Microphone permission denied. Please allow microphone access.');
+            } else if (mediaError.name === 'NotFoundError') {
+              throw new Error('No microphone found. Please check your microphone.');
+            } else if (mediaError.name === 'NotReadableError') {
+              throw new Error('Microphone is already in use by another application.');
+            } else {
+              throw new Error(`Microphone access failed: ${mediaError.message}`);
+            }
+          } else {
+            throw new Error('Failed to access microphone');
+          }
         }
       }
 
@@ -117,44 +215,69 @@ export function InterviewRoom({
 
   const setupAudioProcessing = async (stream: MediaStream) => {
     try {
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      audioContextRef.current = audioContext;
+      // Create separate contexts for input and output
+      const AudioContextConstructor = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextConstructor) {
+        throw new Error('AudioContext not supported in this browser');
+      }
 
-      const source = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      // Input context for microphone (16kHz)
+      const inputContext = new AudioContextConstructor({ sampleRate: 16000 });
+      if (inputContext.state === 'suspended') {
+        await inputContext.resume();
+      }
+
+      // Output context for AI voice (24kHz) 
+      const outputContext = new AudioContextConstructor({ sampleRate: 24000 });
+      if (outputContext.state === 'suspended') {
+        await outputContext.resume();
+      }
+      
+      // Store output context as the main audio context for playback
+      audioContextRef.current = outputContext;
+
+      // Create output gain node for AI voice
+      const outputGain = outputContext.createGain();
+      outputGain.gain.value = 1.0; // Full volume for AI voice
+      outputGain.connect(outputContext.destination);
+      outputGainRef.current = outputGain;
+      
+      // Initialize timing for smooth audio playback
+      nextStartTimeRef.current = outputContext.currentTime;
+
+      // Setup microphone input processing
+      const source = inputContext.createMediaStreamSource(stream);
+      const processor = inputContext.createScriptProcessor(1024, 1, 1);
       audioProcessorRef.current = processor;
 
       processor.onaudioprocess = (event) => {
         if (state.isRecording && sessionRef.current) {
-          const inputData = event.inputBuffer.getChannelData(0);
-          const audioData = convertFloat32ToInt16(inputData);
-          const base64Audio = btoa(String.fromCharCode(...new Uint8Array(audioData.buffer)));
-
-          sessionRef.current.sendRealtimeInput({
-            audio: {
-              data: base64Audio,
-              mimeType: "audio/pcm;rate=16000"
-            }
-          });
+          try {
+            const inputBuffer = event.inputBuffer;
+            const pcmData = inputBuffer.getChannelData(0);
+            
+            // Create blob for Gemini (expects 16kHz)
+            const blob = createBlob(pcmData);
+            sessionRef.current.sendRealtimeInput({ media: blob });
+          } catch (error) {
+            console.warn('Audio processing error:', error);
+          }
         }
       };
 
+      // Connect input processing chain (muted to avoid feedback)
       source.connect(processor);
-      processor.connect(audioContext.destination);
+      const inputGain = inputContext.createGain();
+      inputGain.gain.value = 0; // Mute input to prevent feedback
+      processor.connect(inputGain);
+      inputGain.connect(inputContext.destination);
+
+      console.log('Audio processing setup completed');
 
     } catch (err) {
       console.error('Failed to setup audio processing:', err);
-      throw err;
+      throw new Error(`Audio setup failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-  };
-
-  const convertFloat32ToInt16 = (float32Array: Float32Array): Int16Array => {
-    const int16Array = new Int16Array(float32Array.length);
-    for (let i = 0; i < float32Array.length; i++) {
-      const s = Math.max(-1, Math.min(1, float32Array[i] ?? 0));
-      int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-    }
-    return int16Array;
   };
 
   const initializeGeminiSession = async () => {
@@ -204,13 +327,20 @@ export function InterviewRoom({
             setState(prev => ({ ...prev, isConnected: true }));
           },
           onmessage: (message: any) => {
-            responseQueue.push(message);
-            handleGeminiMessage(message);
+            try {
+              responseQueue.push(message);
+              handleGeminiMessage(message);
+            } catch (error) {
+              console.warn('Message handling error:', error);
+            }
           },
           onerror: (e: ErrorEvent) => {
             console.error('Gemini session error:', e.message);
-            setError(`Session error: ${e.message}`);
-            toast.error('Interview session error');
+            // Filter out common non-critical errors
+            if (!e.message?.includes('non-text parts') && !e.message?.includes('AbortError')) {
+              setError(`Session error: ${e.message}`);
+              toast.error('Interview session error');
+            }
           },
           onclose: (e: CloseEvent) => {
             console.log('Gemini session closed:', e.reason);
@@ -225,45 +355,144 @@ export function InterviewRoom({
 
       sessionRef.current = session;
 
-      // Send initial context
-      const systemPrompt = `You are an AI interviewer conducting a professional interview for a ${settings.jobRole} position. 
-      Be professional, ask relevant questions, and provide constructive feedback. 
-      Keep responses concise and natural.`;
-
-      session.sendClientContent({
-        turns: systemPrompt
-      });
+      // Start the interview immediately by sending a simple trigger message
+      console.log('Starting interview conversation...');
+      
+      // Send a simple message to trigger the AI to start speaking
+      setTimeout(() => {
+        if (sessionRef.current) {
+          console.log('Sending initial message to trigger AI response');
+          sessionRef.current.sendClientContent({
+            turns: [{
+              role: 'user',
+              parts: [{
+                text: `You are conducting an interview for a ${settings.jobRole} position. Please greet the candidate and start the interview with your first question.`
+              }]
+            }]
+          });
+        }
+      }, 500);
 
     } catch (err) {
       console.error('Failed to initialize Gemini session:', err);
-      throw err;
+      throw new Error(`Session initialization failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   };
 
-  const handleGeminiMessage = (message: any) => {
+  const handleGeminiMessage = async (message: any) => {
+    console.log('Received Gemini message:', message);
+    
     setState(prev => ({
       ...prev,
       messages: [...prev.messages, message],
       currentTurn: [...prev.currentTurn, message],
     }));
 
-    // Handle audio output
-    if (message.data && audioRef.current) {
-      const audioBuffer = new Int16Array(
-        new Uint8Array(message.data.split('').map((c: string) => c.charCodeAt(0))).buffer
-      );
-      
-      const audioBlob = new Blob([audioBuffer], { type: 'audio/wav' });
-      const audioUrl = URL.createObjectURL(audioBlob);
-      
-      audioRef.current.src = audioUrl;
-      audioRef.current.play().catch(console.error);
-      
-      setState(prev => ({ ...prev, isSpeaking: true }));
-      
-      audioRef.current.onended = () => {
+    // Handle audio output - check multiple possible locations for audio data
+    let audioData = null;
+    
+    // Check different possible locations for audio data
+    if (message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data) {
+      audioData = message.serverContent.modelTurn.parts[0].inlineData.data;
+      console.log('Found audio in modelTurn.parts.inlineData');
+    } else if (message.data) {
+      audioData = message.data;
+      console.log('Found audio in message.data');
+    } else if (message.serverContent?.modelTurn?.parts?.[0]?.audio?.data) {
+      audioData = message.serverContent.modelTurn.parts[0].audio.data;
+      console.log('Found audio in modelTurn.parts.audio');
+    }
+
+    if (audioData && audioContextRef.current && outputGainRef.current) {
+      try {
+        console.log('Processing audio data...', { audioDataLength: audioData.length });
+        
+        // Stop any currently playing audio sources
+        if (audioSourcesRef.current.size > 0) {
+          console.log('Stopping existing audio sources');
+          audioSourcesRef.current.forEach(source => {
+            try {
+              source.stop();
+            } catch (e) {
+              console.warn('Error stopping audio source:', e);
+            }
+          });
+          audioSourcesRef.current.clear();
+        }
+
+        // Decode audio data
+        const decodedData = decode(audioData);
+        const audioBuffer = await decodeAudioData(
+          decodedData,
+          audioContextRef.current,
+          24000, // Expected sample rate from Gemini
+          1 // Mono
+        );
+
+        console.log('Audio buffer created:', { 
+          duration: audioBuffer.duration, 
+          sampleRate: audioBuffer.sampleRate,
+          channels: audioBuffer.numberOfChannels
+        });
+
+        // Calculate next start time for smooth playback
+        const currentTime = audioContextRef.current.currentTime;
+        nextStartTimeRef.current = Math.max(nextStartTimeRef.current, currentTime);
+
+        // Create and configure audio source
+        const source = audioContextRef.current.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(outputGainRef.current);
+        
+        // Handle source cleanup when it ends
+        source.onended = () => {
+          console.log('Audio playback ended');
+          audioSourcesRef.current.delete(source);
+          if (audioSourcesRef.current.size === 0) {
+            setState(prev => ({ ...prev, isSpeaking: false }));
+          }
+        };
+
+        // Start playback
+        console.log('Starting audio playback at time:', nextStartTimeRef.current);
+        source.start(nextStartTimeRef.current);
+        nextStartTimeRef.current = nextStartTimeRef.current + audioBuffer.duration;
+        audioSourcesRef.current.add(source);
+        
+        setState(prev => ({ ...prev, isSpeaking: true }));
+        console.log('Audio playback started successfully');
+
+      } catch (error) {
+        console.error('Audio processing error:', error);
         setState(prev => ({ ...prev, isSpeaking: false }));
-      };
+      }
+    } else {
+      if (!audioData) {
+        console.log('No audio data found in message');
+      }
+      if (!audioContextRef.current) {
+        console.log('No audio context available');
+      }
+      if (!outputGainRef.current) {
+        console.log('No output gain node available');
+      }
+    }
+
+    // Handle interruptions
+    if (message.serverContent?.interrupted) {
+      // Stop all playing audio sources
+      if (audioSourcesRef.current.size > 0) {
+        audioSourcesRef.current.forEach(source => {
+          try {
+            source.stop();
+          } catch (e) {
+            // Source might already be stopped
+          }
+        });
+        audioSourcesRef.current.clear();
+      }
+      nextStartTimeRef.current = 0;
+      setState(prev => ({ ...prev, isSpeaking: false }));
     }
 
     // Handle text output
@@ -285,40 +514,124 @@ export function InterviewRoom({
     }
   };
 
-  const toggleRecording = () => {
+  const toggleRecording = async () => {
     if (!state.isConnected) return;
+
+    console.log('Toggle recording called, current state:', { 
+      isRecording: state.isRecording, 
+      audioContextState: audioContextRef.current?.state,
+      outputGainState: outputGainRef.current?.context?.state 
+    });
+
+    // Handle AudioContext resume for user interaction requirement
+    if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+      try {
+        console.log('Resuming main audio context...');
+        await audioContextRef.current.resume();
+        console.log('Main audio context resumed');
+      } catch (error) {
+        console.warn('Failed to resume AudioContext:', error);
+        toast.error('Audio context activation failed');
+        return;
+      }
+    }
+
+    // Also ensure output gain context is resumed
+    if (outputGainRef.current && outputGainRef.current.context.state === 'suspended') {
+      try {
+        console.log('Resuming output gain context...');
+        const context = outputGainRef.current.context as AudioContext;
+        await context.resume();
+        console.log('Output gain context resumed');
+      } catch (error) {
+        console.warn('Failed to resume output AudioContext:', error);
+      }
+    }
 
     setState(prev => ({ ...prev, isRecording: !prev.isRecording }));
     
     if (!state.isRecording) {
-      toast.success('Recording started');
+      console.log('Starting recording...');
+      toast.success('Recording started - speak now!');
     } else {
+      console.log('Stopping recording...');
       toast.info('Recording stopped');
     }
   };
 
   const cleanupSession = () => {
-    if (sessionRef.current) {
-      sessionRef.current.close();
-      sessionRef.current = null;
-    }
+    try {
+      // Close Gemini session
+      if (sessionRef.current) {
+        sessionRef.current.close();
+        sessionRef.current = null;
+      }
 
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop());
-      mediaStreamRef.current = null;
-    }
+      // Stop all audio sources
+      if (audioSourcesRef.current.size > 0) {
+        audioSourcesRef.current.forEach((source: AudioBufferSourceNode) => {
+          try {
+            source.stop();
+          } catch (e) {
+            // Source might already be stopped
+          }
+        });
+        audioSourcesRef.current.clear();
+      }
 
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
+      // Stop media streams
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(track => {
+          track.stop();
+        });
+        mediaStreamRef.current = null;
+      }
 
-    if (audioProcessorRef.current) {
-      audioProcessorRef.current.disconnect();
-      audioProcessorRef.current = null;
-    }
+      // Clean up audio context
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close().catch(console.warn);
+        audioContextRef.current = null;
+      }
 
-    setState(prev => ({ ...prev, isConnected: false }));
+      // Clean up audio processor
+      if (audioProcessorRef.current) {
+        audioProcessorRef.current.disconnect();
+        audioProcessorRef.current = null;
+      }
+
+      // Clean up output gain
+      if (outputGainRef.current) {
+        outputGainRef.current.disconnect();
+        outputGainRef.current = null;
+      }
+
+      // Reset timing
+      nextStartTimeRef.current = 0;
+
+      // Clean up audio element (keep as fallback)
+      if (audioRef.current) {
+        if (!audioRef.current.paused) {
+          audioRef.current.pause();
+        }
+        
+        // Clean up blob URLs to prevent memory leaks
+        if (audioRef.current.src && audioRef.current.src.startsWith('blob:')) {
+          URL.revokeObjectURL(audioRef.current.src);
+        }
+        
+        audioRef.current.src = '';
+        audioRef.current.onended = null;
+        audioRef.current.onerror = null;
+      }
+
+      // Clean up video element (removed)
+      // videoRef is no longer used
+
+      setState(prev => ({ ...prev, isConnected: false, isSpeaking: false, isRecording: false }));
+      
+    } catch (error) {
+      console.warn('Cleanup error:', error);
+    }
   };
 
   const handleEndInterview = () => {
@@ -400,56 +713,56 @@ export function InterviewRoom({
       </div>
 
       {/* Main Interview Interface */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Video/Audio Area */}
-        <div className="lg:col-span-2 space-y-4">
-          {/* Video Feed */}
-          {settings.enableVideo && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Your Video</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-cover"
-                  />
-                  {!mediaStreamRef.current && (
-                    <div className="absolute inset-0 flex items-center justify-center text-white">
-                      <VideoOff className="h-12 w-12" />
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Audio Controls Area */}
+        <div className="space-y-4">
           {/* Audio Controls */}
           {settings.enableAudio && (
             <Card>
               <CardHeader>
-                <CardTitle>Audio Controls</CardTitle>
+                <CardTitle>Voice Interview</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Click "Start Recording" to begin speaking with the AI interviewer
+                </p>
               </CardHeader>
               <CardContent>
-                <div className="flex items-center gap-4">
-                  <Button
-                    variant={state.isRecording ? 'destructive' : 'default'}
-                    onClick={toggleRecording}
-                    disabled={!state.isConnected}
-                  >
-                    {state.isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                    {state.isRecording ? 'Stop Recording' : 'Start Recording'}
-                  </Button>
+                <div className="flex flex-col items-center gap-6">
+                  {/* Large microphone button */}
+                  <div className="relative">
+                    <Button
+                      variant={state.isRecording ? 'destructive' : 'default'}
+                      onClick={toggleRecording}
+                      disabled={!state.isConnected}
+                      size="lg"
+                      className="w-24 h-24 rounded-full text-lg"
+                    >
+                      {state.isRecording ? <MicOff className="h-8 w-8" /> : <Mic className="h-8 w-8" />}
+                    </Button>
+                    {state.isRecording && (
+                      <div className="absolute -inset-2 rounded-full border-2 border-red-500 animate-pulse" />
+                    )}
+                  </div>
                   
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                    <span className="text-sm text-muted-foreground">
-                      {state.isSpeaking ? 'AI Speaking' : 'Listening'}
-                    </span>
+                  {/* Status indicator */}
+                  <div className="text-center">
+                    <div className="flex items-center justify-center gap-2 mb-2">
+                      <div className={`w-3 h-3 rounded-full ${
+                        state.isSpeaking ? 'bg-blue-500 animate-pulse' : 
+                        state.isRecording ? 'bg-green-500 animate-pulse' : 
+                        'bg-gray-400'
+                      }`} />
+                      <span className="text-sm font-medium">
+                        {state.isSpeaking ? 'AI is speaking...' : 
+                         state.isRecording ? 'Listening to you...' : 
+                         state.isConnected ? 'Ready to start' : 'Connecting...'}
+                      </span>
+                    </div>
+                    
+                    <p className="text-xs text-muted-foreground">
+                      {state.isRecording ? 'Click the microphone again to stop recording' : 
+                       state.isConnected ? 'Click the microphone to start speaking' : 
+                       'Initializing audio system...'}
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -457,51 +770,69 @@ export function InterviewRoom({
           )}
         </div>
 
-        {/* Chat/Status Area */}
+        {/* Status and Controls Area */}
         <div className="space-y-4">
           {/* Session Status */}
           <Card>
             <CardHeader>
-              <CardTitle>Session Status</CardTitle>
+              <CardTitle>Interview Status</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm">Duration</span>
-                <span className="font-mono">{formatDuration(sessionDuration)}</span>
+                <span className="font-mono text-lg">{formatDuration(sessionDuration)}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm">Messages</span>
-                <span>{state.messages.length}</span>
+                <span className="text-sm">AI Responses</span>
+                <span className="text-lg font-semibold">{state.messages.length}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm">Status</span>
+                <span className="text-sm">Connection</span>
                 <Badge variant={state.isConnected ? 'default' : 'secondary'}>
-                  {state.isConnected ? 'Active' : 'Inactive'}
+                  {state.isConnected ? '🟢 Connected' : '🔴 Connecting...'}
                 </Badge>
               </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm">Job Role</span>
+                <Badge variant="outline">{settings.jobRole}</Badge>
+              </div>
+              
+              {/* Test Audio Button */}
+              {state.isConnected && (
+                <Button
+                  onClick={() => {
+                    if (sessionRef.current) {
+                      console.log('Sending test message to trigger AI response...');
+                      sessionRef.current.sendClientContent({
+                        turns: [{
+                          role: 'user',
+                          parts: [{
+                            text: "Please say 'Hello, I am your AI interviewer. Can you hear me clearly?'"
+                          }]
+                        }]
+                      });
+                    }
+                  }}
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                >
+                  🔊 Test AI Voice
+                </Button>
+              )}
             </CardContent>
           </Card>
 
-          {/* Recent Messages */}
+          {/* Instructions */}
           <Card>
             <CardHeader>
-              <CardTitle>Recent Messages</CardTitle>
+              <CardTitle>How to Use</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {state.messages.slice(-5).map((message, index) => (
-                  <div key={index} className="text-sm p-2 bg-muted rounded">
-                    {message.serverContent?.modelTurn?.parts?.[0]?.text || 
-                     message.text || 
-                     'Audio message'}
-                  </div>
-                ))}
-                {state.messages.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    No messages yet
-                  </p>
-                )}
-              </div>
+            <CardContent className="text-sm space-y-2">
+              <p>1. Wait for the AI to greet you and ask the first question</p>
+              <p>2. Click the microphone to start recording your answer</p>
+              <p>3. Speak clearly and click again when finished</p>
+              <p>4. The AI will respond and ask follow-up questions</p>
             </CardContent>
           </Card>
 

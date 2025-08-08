@@ -25,7 +25,7 @@ export default function InterviewPage() {
         jobRole: '',
         voiceName: 'Zephyr',
         languageCode: 'en-US',
-        enableVideo: true,
+        enableVideo: false,
         enableAudio: true,
     });
 

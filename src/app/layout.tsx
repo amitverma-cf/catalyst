@@ -7,6 +7,7 @@ import { TRPCReactProvider } from "@/trpc/react";
 import { ClerkProvider, SignedIn, SignedOut, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
 import { UserSyncProvider } from "@/components/user-sync-provider";
 import { Toaster } from "sonner";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Create T3 App",
@@ -30,6 +31,9 @@ export default function RootLayout({
           <body>
             <UserSyncProvider>
               <header className="flex justify-end items-center p-4 gap-4 h-16">
+                <Link href="/" className="text-xl sm:text-2xl font-extrabold tracking-tight">
+                  <span className="text-[#6c47ff]">Catalysts</span>
+                </Link>
                 <SignedOut>
                   <SignInButton />
                   <SignUpButton>

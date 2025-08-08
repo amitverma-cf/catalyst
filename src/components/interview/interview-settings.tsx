@@ -142,9 +142,9 @@ export function InterviewSettings({
       {/* Media Settings */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Media Settings</CardTitle>
+          <CardTitle className="text-lg">Audio Settings</CardTitle>
           <CardDescription>
-            Configure audio and video options for your interview
+            Configure audio options for your voice interview
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -152,7 +152,7 @@ export function InterviewSettings({
             <div className="space-y-0.5">
               <Label htmlFor="audio-toggle">Enable Audio</Label>
               <p className="text-sm text-muted-foreground">
-                Allow the AI to speak and hear your responses
+                Allow the AI to speak and hear your responses (Required for voice interview)
               </p>
             </div>
             <Switch
@@ -162,18 +162,7 @@ export function InterviewSettings({
             />
           </div>
 
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label htmlFor="video-toggle">Enable Video</Label>
-              <p className="text-sm text-muted-foreground">
-                Use webcam for face-to-face interview experience
-              </p>
-            </div>
-            <Switch
-              id="video-toggle"
-              checked={settings.enableVideo}
-              onCheckedChange={handleVideoToggle}
-            />
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
           </div>
         </CardContent>
       </Card>
