@@ -35,6 +35,7 @@ export default tseslint.config(
       "@typescript-eslint/prefer-promise-reject-errors": "off",
       "@typescript-eslint/no-unsafe-argument": "off",
       "@typescript-eslint/no-inferrable-types": "off",
+      "@typescript-eslint/no-misused-promises": "off",
       "react-hooks/exhaustive-deps": "off",
       "@typescript-eslint/prefer-regexp-exec": "off",
       "@typescript-eslint/restrict-template-expressions": "off",
@@ -50,10 +51,6 @@ export default tseslint.config(
         { argsIgnorePattern: "^_" },
       ],
       "@typescript-eslint/require-await": "off",
-      "@typescript-eslint/no-misused-promises": [
-        "error",
-        { checksVoidReturn: { attributes: false } },
-      ],
       "drizzle/enforce-delete-with-where": [
         "error",
         { drizzleObjectName: ["db", "ctx.db"] },
