@@ -5,11 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { 
-  Mic, 
+import {
+  Mic,
   MicOff,
-  PhoneOff, 
-  Settings, 
+  PhoneOff,
+  Settings,
   AlertCircle,
   Loader2
 } from 'lucide-react';
@@ -64,7 +64,7 @@ async function decodeAudioData(
   try {
     // Calculate buffer size based on data length and channels
     const samplesPerChannel = Math.floor(data.length / 2 / numChannels);
-    
+
     if (samplesPerChannel <= 0) {
       throw new Error('Invalid audio data length');
     }
@@ -79,7 +79,7 @@ async function decodeAudioData(
     for (let i = 0; i < samplesPerChannel; i++) {
       dataFloat32[i] = (dataInt16[i] ?? 0) / 32768.0;
     }
-    
+
     // Copy to buffer
     if (numChannels === 1) {
       buffer.copyToChannel(dataFloat32, 0);
@@ -105,7 +105,7 @@ async function decodeAudioData(
 async function playAudioFallback(audioData: string): Promise<void> {
   try {
     const decodedData = decode(audioData);
-    
+
     // Create a proper WAV file header
     const sampleRate = 24000;
     const numChannels = 1;
@@ -114,16 +114,16 @@ async function playAudioFallback(audioData: string): Promise<void> {
     const blockAlign = numChannels * bitsPerSample / 8;
     const dataSize = decodedData.length;
     const fileSize = 36 + dataSize;
-    
+
     // Create WAV header
     const header = new ArrayBuffer(44);
     const view = new DataView(header);
-    
+
     // RIFF header
     view.setUint32(0, 0x52494646, false); // "RIFF"
     view.setUint32(4, fileSize, true); // File size
     view.setUint32(8, 0x57415645, false); // "WAVE"
-    
+
     // fmt chunk
     view.setUint32(12, 0x666d7420, false); // "fmt "
     view.setUint32(16, 16, true); // Chunk size
@@ -133,22 +133,22 @@ async function playAudioFallback(audioData: string): Promise<void> {
     view.setUint32(28, byteRate, true); // Byte rate
     view.setUint16(32, blockAlign, true); // Block align
     view.setUint16(34, bitsPerSample, true); // Bits per sample
-    
+
     // data chunk
     view.setUint32(36, 0x64617461, false); // "data"
     view.setUint32(40, dataSize, true); // Data size
-    
+
     // Combine header and audio data
     const wavData = new Uint8Array(header.byteLength + decodedData.length);
     wavData.set(new Uint8Array(header), 0);
     wavData.set(decodedData, header.byteLength);
-    
+
     const blob = new Blob([wavData], { type: 'audio/wav' });
     const audioUrl = URL.createObjectURL(blob);
-    
+
     const audio = new Audio(audioUrl);
     audio.volume = 1.0;
-    
+
     return new Promise((resolve, reject) => {
       audio.onended = () => {
         URL.revokeObjectURL(audioUrl);
@@ -230,7 +230,7 @@ export function InterviewRoom({
     };
 
     initializeSession();
-    
+
     return () => {
       console.warn = originalWarn;
       cleanupSession();
@@ -262,7 +262,7 @@ export function InterviewRoom({
           await setupAudioProcessing(stream);
         } catch (mediaError) {
           console.warn('Media access error:', mediaError);
-          
+
           // Provide user-friendly error messages
           if (mediaError instanceof Error) {
             if (mediaError.name === 'NotAllowedError') {
@@ -308,7 +308,7 @@ export function InterviewRoom({
       if (audioContext.state === 'suspended') {
         await audioContext.resume();
       }
-      
+
       audioContextRef.current = audioContext;
 
       // Create output gain node for AI voice
@@ -316,7 +316,7 @@ export function InterviewRoom({
       outputGain.gain.value = 1.0; // Full volume for AI voice
       outputGain.connect(audioContext.destination);
       outputGainRef.current = outputGain;
-      
+
       // Initialize timing for smooth audio playback
       nextStartTimeRef.current = audioContext.currentTime;
 
@@ -330,7 +330,7 @@ export function InterviewRoom({
           try {
             const inputBuffer = event.inputBuffer;
             const pcmData = inputBuffer.getChannelData(0);
-            
+
             // Create blob for Gemini (expects 16kHz)
             const blob = createBlob(pcmData);
             sessionRef.current.sendRealtimeInput({ media: blob });
@@ -432,7 +432,7 @@ export function InterviewRoom({
 
       // Start the interview immediately by sending a simple trigger message
       console.log('Starting interview conversation...');
-      
+
       // Send a simple message to trigger the AI to start speaking
       setTimeout(() => {
         if (sessionRef.current) {
@@ -457,7 +457,7 @@ export function InterviewRoom({
   // Improved audio data extraction and playback
   const handleGeminiMessage = async (message: any) => {
     console.log('Received Gemini message:', message);
-    
+
     setState(prev => ({
       ...prev,
       messages: [...prev.messages, message],
@@ -467,7 +467,7 @@ export function InterviewRoom({
     // Enhanced audio data extraction - check multiple possible locations
     let audioData: string | null = null;
     let audioMimeType: string = 'audio/pcm;rate=24000';
-    
+
     // Check different possible locations for audio data
     if (message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data) {
       audioData = message.serverContent.modelTurn.parts[0].inlineData.data;
@@ -493,11 +493,11 @@ export function InterviewRoom({
 
     if (audioData) {
       try {
-        console.log('Processing audio data...', { 
+        console.log('Processing audio data...', {
           audioDataLength: audioData.length,
-          audioMimeType 
+          audioMimeType
         });
-        
+
         // Stop any currently playing audio sources
         if (audioSourcesRef.current.size > 0) {
           console.log('Stopping existing audio sources');
@@ -516,7 +516,7 @@ export function InterviewRoom({
           try {
             // Decode audio data
             const decodedData = decode(audioData);
-            
+
             // Determine sample rate from mime type or use default
             let sampleRate = 24000;
             if (audioMimeType && audioMimeType.includes('rate=')) {
@@ -525,9 +525,9 @@ export function InterviewRoom({
                 sampleRate = parseInt(rateMatch[1] ?? '24000', 10);
               }
             }
-            
+
             console.log('Decoding audio with sample rate:', sampleRate);
-            
+
             const audioBuffer = await decodeAudioData(
               decodedData,
               audioContextRef.current,
@@ -535,8 +535,8 @@ export function InterviewRoom({
               1 // Mono
             );
 
-            console.log('Audio buffer created:', { 
-              duration: audioBuffer.duration, 
+            console.log('Audio buffer created:', {
+              duration: audioBuffer.duration,
               sampleRate: audioBuffer.sampleRate,
               channels: audioBuffer.numberOfChannels
             });
@@ -549,7 +549,7 @@ export function InterviewRoom({
             const source = audioContextRef.current.createBufferSource();
             source.buffer = audioBuffer;
             source.connect(outputGainRef.current);
-            
+
             // Handle source cleanup when it ends
             source.onended = () => {
               console.log('Audio playback ended');
@@ -564,13 +564,13 @@ export function InterviewRoom({
             source.start(nextStartTimeRef.current);
             nextStartTimeRef.current = nextStartTimeRef.current + audioBuffer.duration;
             audioSourcesRef.current.add(source);
-            
+
             setState(prev => ({ ...prev, isSpeaking: true }));
             console.log('Audio playback started successfully');
 
           } catch (audioContextError) {
             console.warn('AudioContext playback failed, trying fallback:', audioContextError);
-            
+
             // Fallback to HTML5 Audio
             try {
               await playAudioFallback(audioData);
@@ -636,10 +636,10 @@ export function InterviewRoom({
   const toggleRecording = async () => {
     if (!state.isConnected) return;
 
-    console.log('Toggle recording called, current state:', { 
-      isRecording: state.isRecording, 
+    console.log('Toggle recording called, current state:', {
+      isRecording: state.isRecording,
       audioContextState: audioContextRef.current?.state,
-      outputGainState: outputGainRef.current?.context?.state 
+      outputGainState: outputGainRef.current?.context?.state
     });
 
     // Handle AudioContext resume for user interaction requirement
@@ -656,7 +656,7 @@ export function InterviewRoom({
     }
 
     setState(prev => ({ ...prev, isRecording: !prev.isRecording }));
-    
+
     if (!state.isRecording) {
       console.log('Starting recording...');
       toast.success('Recording started - speak now!');
@@ -720,19 +720,19 @@ export function InterviewRoom({
         if (!audioRef.current.paused) {
           audioRef.current.pause();
         }
-        
+
         // Clean up blob URLs to prevent memory leaks
         if (audioRef.current.src && audioRef.current.src.startsWith('blob:')) {
           URL.revokeObjectURL(audioRef.current.src);
         }
-        
+
         audioRef.current.src = '';
         audioRef.current.onended = null;
         audioRef.current.onerror = null;
       }
 
       setState(prev => ({ ...prev, isConnected: false, isSpeaking: false, isRecording: false }));
-      
+
     } catch (error) {
       console.warn('Cleanup error:', error);
     }
@@ -740,7 +740,7 @@ export function InterviewRoom({
 
   const handleEndInterview = () => {
     cleanupSession();
-    
+
     // Generate basic feedback based on session
     const feedback = {
       overallRating: 'good' as const,
@@ -846,26 +846,25 @@ export function InterviewRoom({
                       <div className="absolute -inset-2 rounded-full border-2 border-red-500 animate-pulse" />
                     )}
                   </div>
-                  
+
                   {/* Status indicator */}
                   <div className="text-center">
                     <div className="flex items-center justify-center gap-2 mb-2">
-                      <div className={`w-3 h-3 rounded-full ${
-                        state.isSpeaking ? 'bg-blue-500 animate-pulse' : 
-                        state.isRecording ? 'bg-green-500 animate-pulse' : 
-                        'bg-gray-400'
-                      }`} />
+                      <div className={`w-3 h-3 rounded-full ${state.isSpeaking ? 'bg-blue-500 animate-pulse' :
+                          state.isRecording ? 'bg-green-500 animate-pulse' :
+                            'bg-gray-400'
+                        }`} />
                       <span className="text-sm font-medium">
-                        {state.isSpeaking ? 'AI is speaking...' : 
-                         state.isRecording ? 'Listening to you...' : 
-                         state.isConnected ? 'Ready to start' : 'Connecting...'}
+                        {state.isSpeaking ? 'AI is speaking...' :
+                          state.isRecording ? 'Listening to you...' :
+                            state.isConnected ? 'Ready to start' : 'Connecting...'}
                       </span>
                     </div>
-                    
+
                     <p className="text-xs text-muted-foreground">
-                      {state.isRecording ? 'Click the microphone again to stop recording' : 
-                       state.isConnected ? 'Click the microphone to start speaking' : 
-                       'Initializing audio system...'}
+                      {state.isRecording ? 'Click the microphone again to stop recording' :
+                        state.isConnected ? 'Click the microphone to start speaking' :
+                          'Initializing audio system...'}
                     </p>
                   </div>
                 </div>
@@ -900,9 +899,9 @@ export function InterviewRoom({
                 <span className="text-sm">Job Role</span>
                 <Badge variant="outline">{settings.jobRole}</Badge>
               </div>
-              
+
               {/* Test Audio Button */}
-              {state.isConnected && (
+              {/* {state.isConnected && (
                 <Button
                   onClick={() => {
                     if (sessionRef.current) {
@@ -923,7 +922,7 @@ export function InterviewRoom({
                 >
                   🔊 Test AI Voice
                 </Button>
-              )}
+              ) */}
             </CardContent>
           </Card>
 
