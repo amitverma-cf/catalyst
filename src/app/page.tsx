@@ -24,7 +24,7 @@ export default async function Home() {
           )}
           <div className="w-full max-w-4xl flex flex-col items-center justify-center gap-8">
             {user ? (
-             <div>
+             <div className="flex flex-row gap-8">
                <Link
                 className="flex max-w-xs flex-col gap-4 rounded-xl bg-white/10 p-4 hover:bg-white/20 transition"
                 href="/resume"
