@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import type { InterviewSettings, LiveServerMessage, InterviewState } from '@/lib/types';
 
-// Audio utility functions from the reference implementation
+// Audio utility functions - improved for better compatibility
 function encode(bytes: Uint8Array): string {
   let binary = '';
   const len = bytes.byteLength;
@@ -26,13 +26,18 @@ function encode(bytes: Uint8Array): string {
 }
 
 function decode(base64: string): Uint8Array {
-  const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
+  try {
+    const binaryString = atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+  } catch (error) {
+    console.error('Failed to decode base64 audio data:', error);
+    throw new Error('Invalid audio data format');
   }
-  return bytes;
 }
 
 function createBlob(data: Float32Array) {
@@ -40,7 +45,7 @@ function createBlob(data: Float32Array) {
   const int16 = new Int16Array(l);
   for (let i = 0; i < l; i++) {
     // convert float32 -1 to 1 to int16 -32768 to 32767
-    int16[i] = (data[i] ?? 0) * 32768;
+    int16[i] = Math.max(-32768, Math.min(32767, (data[i] ?? 0) * 32768));
   }
 
   return {
@@ -49,38 +54,78 @@ function createBlob(data: Float32Array) {
   };
 }
 
+// Improved audio decoding with better error handling
 async function decodeAudioData(
   data: Uint8Array,
   ctx: AudioContext,
-  sampleRate: number,
-  numChannels: number,
+  sampleRate: number = 24000,
+  numChannels: number = 1,
 ): Promise<AudioBuffer> {
-  const buffer = ctx.createBuffer(
-    numChannels,
-    data.length / 2 / numChannels,
-    sampleRate,
-  );
-
-  const dataInt16 = new Int16Array(data.buffer);
-  const l = dataInt16.length;
-  const dataFloat32 = new Float32Array(l);
-  for (let i = 0; i < l; i++) {
-    dataFloat32[i] = (dataInt16[i] ?? 0) / 32768.0;
-  }
-  
-  // Extract interleaved channels
-  if (numChannels === 1) {
-    buffer.copyToChannel(dataFloat32, 0);
-  } else {
-    for (let i = 0; i < numChannels; i++) {
-      const channel = dataFloat32.filter(
-        (_, index) => index % numChannels === i,
-      );
-      buffer.copyToChannel(channel, i);
+  try {
+    // Calculate buffer size based on data length and channels
+    const samplesPerChannel = Math.floor(data.length / 2 / numChannels);
+    
+    if (samplesPerChannel <= 0) {
+      throw new Error('Invalid audio data length');
     }
-  }
 
-  return buffer;
+    const buffer = ctx.createBuffer(numChannels, samplesPerChannel, sampleRate);
+
+    // Convert to Int16Array for proper audio processing
+    const dataInt16 = new Int16Array(data.buffer, data.byteOffset, data.length / 2);
+    const dataFloat32 = new Float32Array(samplesPerChannel);
+
+    // Convert Int16 to Float32 (-32768 to 32767 -> -1 to 1)
+    for (let i = 0; i < samplesPerChannel; i++) {
+      dataFloat32[i] = (dataInt16[i] ?? 0) / 32768.0;
+    }
+    
+    // Copy to buffer
+    if (numChannels === 1) {
+      buffer.copyToChannel(dataFloat32, 0);
+    } else {
+      // Handle multi-channel audio
+      for (let ch = 0; ch < numChannels; ch++) {
+        const channelData = new Float32Array(samplesPerChannel);
+        for (let i = 0; i < samplesPerChannel; i++) {
+          channelData[i] = dataFloat32[i * numChannels + ch] ?? 0;
+        }
+        buffer.copyToChannel(channelData, ch);
+      }
+    }
+
+    return buffer;
+  } catch (error) {
+    console.error('Failed to decode audio data:', error);
+    throw new Error(`Audio decoding failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+// Fallback audio playback using HTML5 Audio
+async function playAudioFallback(audioData: string): Promise<void> {
+  try {
+    const decodedData = decode(audioData);
+    const blob = new Blob([decodedData], { type: 'audio/wav' });
+    const audioUrl = URL.createObjectURL(blob);
+    
+    const audio = new Audio(audioUrl);
+    audio.volume = 1.0;
+    
+    return new Promise((resolve, reject) => {
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+        resolve();
+      };
+      audio.onerror = (error) => {
+        URL.revokeObjectURL(audioUrl);
+        reject(error);
+      };
+      audio.play().catch(reject);
+    });
+  } catch (error) {
+    console.error('Fallback audio playback failed:', error);
+    throw error;
+  }
 }
 
 interface InterviewRoomProps {
@@ -214,39 +259,32 @@ export function InterviewRoom({
 
   const setupAudioProcessing = async (stream: MediaStream) => {
     try {
-      // Create separate contexts for input and output
+      // Use a single AudioContext for both input and output
       const AudioContextConstructor = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioContextConstructor) {
         throw new Error('AudioContext not supported in this browser');
       }
 
-      // Input context for microphone (16kHz)
-      const inputContext = new AudioContextConstructor({ sampleRate: 16000 });
-      if (inputContext.state === 'suspended') {
-        await inputContext.resume();
-      }
-
-      // Output context for AI voice (24kHz) 
-      const outputContext = new AudioContextConstructor({ sampleRate: 24000 });
-      if (outputContext.state === 'suspended') {
-        await outputContext.resume();
+      // Create a single context with 24kHz sample rate for output
+      const audioContext = new AudioContextConstructor({ sampleRate: 24000 });
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
       }
       
-      // Store output context as the main audio context for playback
-      audioContextRef.current = outputContext;
+      audioContextRef.current = audioContext;
 
       // Create output gain node for AI voice
-      const outputGain = outputContext.createGain();
+      const outputGain = audioContext.createGain();
       outputGain.gain.value = 1.0; // Full volume for AI voice
-      outputGain.connect(outputContext.destination);
+      outputGain.connect(audioContext.destination);
       outputGainRef.current = outputGain;
       
       // Initialize timing for smooth audio playback
-      nextStartTimeRef.current = outputContext.currentTime;
+      nextStartTimeRef.current = audioContext.currentTime;
 
-      // Setup microphone input processing
-      const source = inputContext.createMediaStreamSource(stream);
-      const processor = inputContext.createScriptProcessor(1024, 1, 1);
+      // Setup microphone input processing (using the same context)
+      const source = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(1024, 1, 1);
       audioProcessorRef.current = processor;
 
       processor.onaudioprocess = (event) => {
@@ -266,10 +304,10 @@ export function InterviewRoom({
 
       // Connect input processing chain (muted to avoid feedback)
       source.connect(processor);
-      const inputGain = inputContext.createGain();
+      const inputGain = audioContext.createGain();
       inputGain.gain.value = 0; // Mute input to prevent feedback
       processor.connect(inputGain);
-      inputGain.connect(inputContext.destination);
+      inputGain.connect(audioContext.destination);
 
       console.log('Audio processing setup completed');
 
@@ -378,6 +416,7 @@ export function InterviewRoom({
     }
   };
 
+  // Improved audio data extraction and playback
   const handleGeminiMessage = async (message: any) => {
     console.log('Received Gemini message:', message);
     
@@ -387,24 +426,39 @@ export function InterviewRoom({
       currentTurn: [...prev.currentTurn, message],
     }));
 
-    // Handle audio output - check multiple possible locations for audio data
+    // Enhanced audio data extraction - check multiple possible locations
     let audioData = null;
+    let audioMimeType: string = 'audio/pcm;rate=24000';
     
     // Check different possible locations for audio data
     if (message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data) {
       audioData = message.serverContent.modelTurn.parts[0].inlineData.data;
+      const mimeType = message.serverContent.modelTurn.parts[0].inlineData.mimeType;
+      if (mimeType) {
+        audioMimeType = mimeType;
+      }
       console.log('Found audio in modelTurn.parts.inlineData');
+    } else if (message.serverContent?.modelTurn?.parts?.[0]?.audio?.data) {
+      audioData = message.serverContent.modelTurn.parts[0].audio.data;
+      const mimeType = message.serverContent.modelTurn.parts[0].audio.mimeType;
+      if (mimeType) {
+        audioMimeType = mimeType;
+      }
+      console.log('Found audio in modelTurn.parts.audio');
     } else if (message.data) {
       audioData = message.data;
       console.log('Found audio in message.data');
-    } else if (message.serverContent?.modelTurn?.parts?.[0]?.audio?.data) {
-      audioData = message.serverContent.modelTurn.parts[0].audio.data;
-      console.log('Found audio in modelTurn.parts.audio');
+    } else if (message.serverContent?.modelTurn?.parts?.[0]?.fileData?.fileUri) {
+      // Handle file-based audio (if any)
+      console.log('Found audio file URI:', message.serverContent.modelTurn.parts[0].fileData.fileUri);
     }
 
-    if (audioData && audioContextRef.current && outputGainRef.current) {
+    if (audioData) {
       try {
-        console.log('Processing audio data...', { audioDataLength: audioData.length });
+        console.log('Processing audio data...', { 
+          audioDataLength: audioData.length,
+          audioMimeType 
+        });
         
         // Stop any currently playing audio sources
         if (audioSourcesRef.current.size > 0) {
@@ -419,62 +473,95 @@ export function InterviewRoom({
           audioSourcesRef.current.clear();
         }
 
-        // Decode audio data
-        const decodedData = decode(audioData);
-        const audioBuffer = await decodeAudioData(
-          decodedData,
-          audioContextRef.current,
-          24000, // Expected sample rate from Gemini
-          1 // Mono
-        );
+        // Try AudioContext playback first
+        if (audioContextRef.current && outputGainRef.current) {
+          try {
+            // Decode audio data
+            const decodedData = decode(audioData);
+            
+            // Determine sample rate from mime type or use default
+            let sampleRate = 24000;
+            if (audioMimeType && audioMimeType.includes('rate=')) {
+              const rateMatch = audioMimeType.match(/rate=(\d+)/);
+              if (rateMatch) {
+                sampleRate = parseInt(rateMatch[1] ?? '24000', 10);
+              }
+            }
+            
+            console.log('Decoding audio with sample rate:', sampleRate);
+            
+            const audioBuffer = await decodeAudioData(
+              decodedData,
+              audioContextRef.current,
+              sampleRate,
+              1 // Mono
+            );
 
-        console.log('Audio buffer created:', { 
-          duration: audioBuffer.duration, 
-          sampleRate: audioBuffer.sampleRate,
-          channels: audioBuffer.numberOfChannels
-        });
+            console.log('Audio buffer created:', { 
+              duration: audioBuffer.duration, 
+              sampleRate: audioBuffer.sampleRate,
+              channels: audioBuffer.numberOfChannels
+            });
 
-        // Calculate next start time for smooth playback
-        const currentTime = audioContextRef.current.currentTime;
-        nextStartTimeRef.current = Math.max(nextStartTimeRef.current, currentTime);
+            // Calculate next start time for smooth playback
+            const currentTime = audioContextRef.current.currentTime;
+            nextStartTimeRef.current = Math.max(nextStartTimeRef.current, currentTime);
 
-        // Create and configure audio source
-        const source = audioContextRef.current.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(outputGainRef.current);
-        
-        // Handle source cleanup when it ends
-        source.onended = () => {
-          console.log('Audio playback ended');
-          audioSourcesRef.current.delete(source);
-          if (audioSourcesRef.current.size === 0) {
-            setState(prev => ({ ...prev, isSpeaking: false }));
+            // Create and configure audio source
+            const source = audioContextRef.current.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(outputGainRef.current);
+            
+            // Handle source cleanup when it ends
+            source.onended = () => {
+              console.log('Audio playback ended');
+              audioSourcesRef.current.delete(source);
+              if (audioSourcesRef.current.size === 0) {
+                setState(prev => ({ ...prev, isSpeaking: false }));
+              }
+            };
+
+            // Start playback
+            console.log('Starting audio playback at time:', nextStartTimeRef.current);
+            source.start(nextStartTimeRef.current);
+            nextStartTimeRef.current = nextStartTimeRef.current + audioBuffer.duration;
+            audioSourcesRef.current.add(source);
+            
+            setState(prev => ({ ...prev, isSpeaking: true }));
+            console.log('Audio playback started successfully');
+
+          } catch (audioContextError) {
+            console.warn('AudioContext playback failed, trying fallback:', audioContextError);
+            
+            // Fallback to HTML5 Audio
+            try {
+              await playAudioFallback(audioData);
+              setState(prev => ({ ...prev, isSpeaking: true }));
+              console.log('Fallback audio playback successful');
+            } catch (fallbackError) {
+              console.error('Fallback audio playback also failed:', fallbackError);
+              toast.error('Failed to play audio response');
+            }
           }
-        };
-
-        // Start playback
-        console.log('Starting audio playback at time:', nextStartTimeRef.current);
-        source.start(nextStartTimeRef.current);
-        nextStartTimeRef.current = nextStartTimeRef.current + audioBuffer.duration;
-        audioSourcesRef.current.add(source);
-        
-        setState(prev => ({ ...prev, isSpeaking: true }));
-        console.log('Audio playback started successfully');
+        } else {
+          // No AudioContext available, try fallback
+          try {
+            await playAudioFallback(audioData);
+            setState(prev => ({ ...prev, isSpeaking: true }));
+            console.log('Fallback audio playback successful (no AudioContext)');
+          } catch (fallbackError) {
+            console.error('Fallback audio playback failed:', fallbackError);
+            toast.error('Failed to play audio response');
+          }
+        }
 
       } catch (error) {
         console.error('Audio processing error:', error);
         setState(prev => ({ ...prev, isSpeaking: false }));
+        toast.error('Failed to process audio response');
       }
     } else {
-      if (!audioData) {
-        console.log('No audio data found in message');
-      }
-      if (!audioContextRef.current) {
-        console.log('No audio context available');
-      }
-      if (!outputGainRef.current) {
-        console.log('No output gain node available');
-      }
+      console.log('No audio data found in message');
     }
 
     // Handle interruptions
@@ -506,11 +593,6 @@ export function InterviewRoom({
     if (message.serverContent?.turnComplete) {
       setState(prev => ({ ...prev, currentTurn: [] }));
     }
-
-    // Handle interruptions
-    if (message.serverContent?.interrupted) {
-      setState(prev => ({ ...prev, isSpeaking: false }));
-    }
   };
 
   const toggleRecording = async () => {
@@ -525,25 +607,13 @@ export function InterviewRoom({
     // Handle AudioContext resume for user interaction requirement
     if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
       try {
-        console.log('Resuming main audio context...');
+        console.log('Resuming audio context...');
         await audioContextRef.current.resume();
-        console.log('Main audio context resumed');
+        console.log('Audio context resumed');
       } catch (error) {
         console.warn('Failed to resume AudioContext:', error);
         toast.error('Audio context activation failed');
         return;
-      }
-    }
-
-    // Also ensure output gain context is resumed
-    if (outputGainRef.current && outputGainRef.current.context.state === 'suspended') {
-      try {
-        console.log('Resuming output gain context...');
-        const context = outputGainRef.current.context as AudioContext;
-        await context.resume();
-        console.log('Output gain context resumed');
-      } catch (error) {
-        console.warn('Failed to resume output AudioContext:', error);
       }
     }
 
@@ -622,9 +692,6 @@ export function InterviewRoom({
         audioRef.current.onended = null;
         audioRef.current.onerror = null;
       }
-
-      // Clean up video element (removed)
-      // videoRef is no longer used
 
       setState(prev => ({ ...prev, isConnected: false, isSpeaking: false, isRecording: false }));
       
