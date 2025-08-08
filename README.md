@@ -1,107 +1,109 @@
-# Create T3 App with Clerk Authentication
+# [cite_start]AI Interview Coach [cite: 1]
 
-This is a [T3 Stack](https://create.t3.gg/) project bootstrapped with `create-t3-app` and integrated with [Clerk](https://clerk.com) authentication.
+[cite_start]*Interview Preparation with Generative AI* [cite: 2]
+Project for UniHack 2025 - GenAI Theme
+[cite_start]Team: Catalysts [cite: 3]
 
-## Features
+---
 
-- ✅ **Clerk Authentication** - Complete user authentication with sign-up, sign-in, and profile management
-- ✅ **Automatic User Sync** - Users are automatically created/updated in PostgreSQL database when they sign in
-- ✅ **tRPC Integration** - Protected routes with Clerk authentication middleware
-- ✅ **Database Integration** - Users table with Drizzle ORM and PostgreSQL (Neon)
-- ✅ **Real-time Sync** - User data syncs between Clerk and your database on every sign-in
+## 🚀 About The Project
 
-## Setup Instructions
+[cite_start]Every student and professional has felt the anxiety before a job interview[cite: 4]. [cite_start]While you can google common questions, you never truly get to practice in a realistic environment[cite: 5]. [cite_start]This project was born from a simple idea: What if you had a personal coach that knew your resume, understood the job you were applying for, and gave you real-time feedback? [cite: 8]
 
-### 1. Environment Variables
+AI Interview Coach is a web application designed to be that coach. It leverages the power of Google's Gemini to provide a hyper-personalized, on-demand interview practice experience. Our platform helps you build confidence and polish your answers, making sure you're ready for the real thing.
 
-Copy `.env.example` to `.env` and fill in your values:
+### The Problem It Solves
 
-```bash
-# Database (Neon PostgreSQL)
-DATABASE_URL="postgresql://username:password@ep-xxx-pooler.us-east-1.postgres.neon.tech/catalyst?sslmode=require"
+We identified several critical gaps in the current interview preparation landscape:
+* [cite_start]*Lack of Personalization:* Most prep tools are generic and don't tailor advice to your specific background[cite: 13].
+* [cite_start]*No Delivery Feedback:* You rarely get feedback on how you speak, including your tone and clarity[cite: 14].
+* [cite_start]*Prohibitively Expensive:* Professional mock interviews can cost between ₹8k-20k per session, making them inaccessible for many[cite: 15].
+* [cite_start]*Not Available On-Demand:* You can't practice whenever you need to, especially for last-minute interviews[cite: 16].
 
-# Clerk Authentication
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
-CLERK_SECRET_KEY="sk_test_..."
-```
+[cite_start]Our platform addresses these challenges by providing a solution that combines realism, personalization, and advanced Generative AI[cite: 17].
 
-### 2. Clerk Setup
+## ✨ Features
 
-1. Create a [Clerk](https://clerk.com) account
-2. Create a new application
-3. Copy the API keys to your `.env` file
-4. Configure your sign-in/sign-up options in Clerk dashboard
+* [cite_start]*Resume Intelligence:* Upload or paste your resume, and our tool will parse it to extract key skills and identify potential gaps to address[cite: 71].
+* [cite_start]*Role-Aware AI:* Powered by Gemini, the coach generates custom interview questions based on the specific job role you select and the contents of your resume[cite: 72].
+* *Voice Feedback Engine:* Answer questions naturally using your voice. [cite_start]The AI provides instant, actionable tips on your content, tone, and delivery to help you improve[cite: 73, 74].
+* [cite_start]*Post-Interview Analysis:* Receive a comprehensive summary and analysis after your practice session is complete[cite: 84].
 
-### 3. Database Setup
+## ⚙ Tech Stack
 
-```bash
-# Push the schema to your database
-pnpm db:push
+This project is built with a modern, type-safe, and performant technology stack:
 
-# Or run migrations
-pnpm db:generate
-pnpm db:migrate
-```
+* *Frontend:* Next.js, React.js
+* *Styling:* Tailwind CSS, shadcn/ui
+* *Backend & API:* tRPC (for end-to-end typesafe APIs)
+* *Authentication:* Clerk
+* *Database:* Postgres (hosted on Neon.tech)
+* *Generative AI:* Google's Gemini (@google/genai)
 
-## How It Works
+## 🚀 Getting Started
 
-### User Authentication Flow
+To get a local copy up and running, follow these simple steps.
 
-1. **User signs in/up** through Clerk components (`<SignInButton>`, `<SignUpButton>`)
-2. **UserSyncProvider** automatically detects the sign-in event
-3. **tRPC mutation** (`user.syncUser`) is called to sync user data
-4. **Database operation** creates or updates the user in PostgreSQL
-5. **User data** is now available throughout your app via tRPC queries
+### Prerequisites
 
-### Key Files
+Make sure you have Node.js and npm (or yarn/pnpm) installed on your machine.
 
-- `src/server/api/routers/user.ts` - User tRPC router with sync logic
-- `src/components/user-sync-provider.tsx` - Automatic user syncing component
-- `src/hooks/use-user-sync.ts` - Hook for accessing synced user data
-- `src/server/db/schema.ts` - Database schema with users table
+### Installation
 
-### Usage Examples
+1.  *Clone the repo*
+    sh
+    git clone [https://github.com/your-username/ai-interview-coach.git](https://github.com/your-username/ai-interview-coach.git)
+    cd ai-interview-coach
+    
+2.  *Install NPM packages*
+    sh
+    npm install
+    
+3.  *Set up environment variables*
+    Create a .env.local file in the root of the project and add the necessary environment variables. You will need keys for Clerk, your Neon Postgres database, and the Google Gemini API.
+    env
+    # Clerk Authentication
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
+    CLERK_SECRET_KEY=
 
-```tsx
-// Get current user data
-function MyComponent() {
-  const { user, isLoading } = useUserSync();
-  
-  if (isLoading) return <div>Loading...</div>;
-  
-  return <div>Hello, {user?.firstName}!</div>;
-}
+    # Neon.tech Postgres Database
+    DATABASE_URL=
 
-// Use tRPC directly
-function UserProfile() {
-  const { data: user } = api.user.getCurrentUser.useQuery();
-  
-  return <div>Email: {user?.email}</div>;
-}
-```
+    # Google Gemini API
+    GOOGLE_GENAI_API_KEY=
+    
+4.  *Run the development server*
+    sh
+    npm run dev
+    
+    Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-## What's next? How do I make an app with this?
+## 🗺 User Flow
 
-We try to keep this project as simple as possible, so you can start with just the scaffolding we set up for you, and add additional things later when they become necessary.
+The application provides two primary workflows:
 
-If you are not familiar with the different technologies used in this project, please refer to the respective docs. If you still are in the wind, please join our [Discord](https://t3.gg/discord) and ask for help.
+1.  *Resume Analysis Flow:*
+    * Login to the application.
+    * Navigate to the /resume page.
+    * Select your target job role.
+    * Upload or copy-paste your resume into the text area.
+    * [cite_start]Receive an instant, AI-powered analysis of your resume[cite: 84].
 
-- [Next.js](https://nextjs.org)
-- [NextAuth.js](https://next-auth.js.org)
-- [Prisma](https://prisma.io)
-- [Drizzle](https://orm.drizzle.team)
-- [Tailwind CSS](https://tailwindcss.com)
-- [tRPC](https://trpc.io)
+2.  *Interview Practice Flow:*
+    * Login to the application.
+    * Navigate to the /interview page.
+    * Select the job role you want to practice for.
+    * Start the voice-based interview session.
+    * [cite_start]After the interview, receive a detailed analysis of your performance[cite: 84].
 
-## Learn More
+## 🔮 Future Improvements
 
-To learn more about the [T3 Stack](https://create.t3.gg/), take a look at the following resources:
+We have a clear vision for extending the capabilities of the AI Interview Coach:
+* *Deeper Analytics:* Integrate video analysis to provide feedback on body language and eye contact.
+* *Expanded Role Library:* Add specialized question banks for more industries like finance, marketing, and healthcare.
+* *Company-Specific Training:* Allow users to select a target company, and the AI will tailor questions to that company's specific culture and interview style.
+* *Mobile App:* Create a dedicated mobile application for practicing on the go.
 
-- [Documentation](https://create.t3.gg/)
-- [Learn the T3 Stack](https://create.t3.gg/en/faq#what-learning-resources-are-currently-available) — Check out these awesome tutorials
+## 📄 License
 
-You can check out the [create-t3-app GitHub repository](https://github.com/t3-oss/create-t3-app) — your feedback and contributions are welcome!
-
-## How do I deploy this?
-
-Follow our deployment guides for [Vercel](https://create.t3.gg/en/deployment/vercel), [Netlify](https://create.t3.gg/en/deployment/netlify) and [Docker](https://create.t3.gg/en/deployment/docker) for more information.
+Distributed under the MIT License. See LICENSE.txt for more information.
